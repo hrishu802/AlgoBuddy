@@ -120,7 +120,7 @@ export interface ChatMessage {
   sender: 'user' | 'mentor' | 'system';
   content: string;
   timestamp: string;
-  type?: 'default' | 'hint' | 'socratic_question' | 'code' | 'complexity' | 'stage_update';
+  type?: 'default' | 'hint' | 'socratic_question' | 'code' | 'complexity' | 'stage_update' | 'error';
   hintLevel?: HintLevel;
   stage?: PedagogyStage;
   suggestedActions?: string[];

@@ -82,20 +82,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         })
       });
 
-      if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
-      }
-
-      const data = await res.json() as {
-        status: string;
-        message: string;
+      let data: {
+        status?: string;
+        message?: string;
         openModelName?: string;
-      };
+        statusCode?: number;
+        errorCategory?: string;
+        error?: string;
+      } = {};
+
+      try {
+        data = await res.json();
+      } catch {
+        // non-JSON response
+      }
 
       if (data.status === 'configured' || data.status === 'connected') {
         setConnectionStatus({
           status: 'success',
-          message: data.message || `Connected to ${data.openModelName || 'Google Gemma 2'}`
+          message: data.message || `Connected to ${data.openModelName || 'Google Gemma 3'}`
+        });
+      } else if (res.status === 402 || data.statusCode === 402 || data.errorCategory === 'billing') {
+        setConnectionStatus({
+          status: 'error',
+          message: data.message || data.error || 'Hugging Face Inference credits exhausted (HTTP 402). Add pre-paid credits or subscribe to PRO at https://huggingface.co/settings/billing.'
+        });
+      } else if (data.status === 'unconfigured' || res.status === 401) {
+        setConnectionStatus({
+          status: 'warning',
+          message: data.message || data.error || 'Authentication token required. Configure HF_TOKEN or enter your token below.'
+        });
+      } else if (!res.ok) {
+        setConnectionStatus({
+          status: 'error',
+          message: data.message || data.error || `Server returned HTTP ${res.status}`
         });
       } else {
         setConnectionStatus({

@@ -13,13 +13,14 @@ import {
   Zap,
   BookOpenCheck,
   KeyRound,
-  Compass
+  Compass,
+  AlertCircle
 } from 'lucide-react';
 import { SafeMarkdown } from './SafeMarkdown';
 
 interface MentorChatProps {
   messages: ChatMessage[];
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string) => Promise<boolean | void> | void;
   isLoading: boolean;
   currentStage: PedagogyStage;
   mode: AppMode;
@@ -43,10 +44,14 @@ export const MentorChat: React.FC<MentorChatProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleSend = () => {
-    if (inputText.trim() && !isLoading) {
-      onSendMessage(inputText.trim());
-      setInputText('');
+  const handleSend = async () => {
+    const trimmed = inputText.trim();
+    if (trimmed && !isLoading) {
+      const res = await onSendMessage(trimmed);
+      // Keep input text intact if the request failed so the learner can retry or edit without re-typing
+      if (res !== false) {
+        setInputText('');
+      }
     }
   };
 
@@ -131,6 +136,10 @@ export const MentorChat: React.FC<MentorChatProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
+          const isError = msg.id.startsWith('err-') ||
+            msg.type === 'error' ||
+            msg.content.includes('Hosted Inference Error') ||
+            msg.content.includes('Credits Exhausted');
           const hintBadge = getHintBadge(msg.hintLevel);
 
           return (
@@ -139,8 +148,12 @@ export const MentorChat: React.FC<MentorChatProps> = ({
               className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
             >
               {!isUser && (
-                <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
-                  <BrainCircuit className="w-4 h-4" />
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                  isError
+                    ? 'bg-rose-950/40 border border-rose-500/40 text-rose-400'
+                    : 'bg-indigo-600/20 border border-indigo-500/30 text-indigo-400'
+                }`}>
+                  {isError ? <AlertCircle className="w-4 h-4" /> : <BrainCircuit className="w-4 h-4" />}
                 </div>
               )}
 
@@ -148,6 +161,8 @@ export const MentorChat: React.FC<MentorChatProps> = ({
                 className={`max-w-[85%] sm:max-w-[78%] rounded-xl p-3.5 space-y-2 text-xs leading-relaxed ${
                   isUser
                     ? 'bg-indigo-600 text-white shadow-sm'
+                    : isError
+                    ? 'bg-[#140a12] border border-rose-500/40 text-slate-200 shadow-md ring-1 ring-rose-500/20'
                     : 'bg-[#0f172a] border border-slate-800 text-slate-200 shadow-sm'
                 }`}
               >

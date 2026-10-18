@@ -147,5 +147,45 @@ describe('AI Service Implementations', () => {
       expect(msg.content).toContain('Network connection refused');
       expect(msg.suggestedActions).toContain('Open Settings (⚙️)');
     });
+
+    it('formats HTTP 402 credit exhaustion error with billing link and resolution steps', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 402,
+        json: async () => ({
+          success: false,
+          statusCode: 402,
+          errorCategory: 'billing',
+          error: 'Hugging Face router returned HTTP 402: You have no remaining credits.'
+        })
+      });
+      globalThis.fetch = mockFetch;
+
+      const service = new GemmaAIService();
+      const msg = await service.startProblemSession(sampleProblem);
+      expect(msg.content).toContain('Credits Exhausted (HTTP 402)');
+      expect(msg.content).toContain('https://huggingface.co/settings/billing');
+      expect(msg.suggestedActions).toContain('Retry Request');
+      expect(msg.suggestedActions).toContain('Switch to Socratic Mock');
+    });
+
+    it('formats HTTP 401 authentication error with token guidance', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          success: false,
+          statusCode: 401,
+          errorCategory: 'authentication',
+          error: 'Hugging Face authentication failed (401 Unauthorized).'
+        })
+      });
+      globalThis.fetch = mockFetch;
+
+      const service = new GemmaAIService();
+      const msg = await service.startProblemSession(sampleProblem);
+      expect(msg.content).toContain('Authentication Failed (HTTP 401)');
+      expect(msg.suggestedActions).toContain('Open Settings (⚙️)');
+    });
   });
 });

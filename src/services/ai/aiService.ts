@@ -662,6 +662,25 @@ Do not be overly verbose. Use bullet points and markdown.`;
 }
 
 // ==========================================
+export class GemmaInferenceError extends Error {
+  statusCode: number;
+  errorCategory: 'billing' | 'authentication' | 'permission' | 'rate_limit' | 'provider_down' | 'network' | 'bad_request';
+  details?: string;
+
+  constructor(
+    message: string,
+    statusCode: number = 400,
+    errorCategory: 'billing' | 'authentication' | 'permission' | 'rate_limit' | 'provider_down' | 'network' | 'bad_request' = 'bad_request',
+    details?: string
+  ) {
+    super(message);
+    this.name = 'GemmaInferenceError';
+    this.statusCode = statusCode;
+    this.errorCategory = errorCategory;
+    this.details = details;
+  }
+}
+
 // ==========================================
 // PRIMARY OPEN-WEIGHT MODEL: GEMMA AI SERVICE
 // ==========================================
@@ -712,8 +731,7 @@ Ask a targeted Socratic question about the input scale and allowable time comple
       }
       return this.formatConfigurationError('constraints', response.error || 'Unknown error communicating with Gemma backend.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.formatConfigurationError('constraints', msg);
+      return this.formatConfigurationError('constraints', err);
     }
   }
 
@@ -759,8 +777,7 @@ Do NOT reveal the complete code solution unless the stage is 'solution' or they 
       }
       return this.formatConfigurationError(stage, response.error || 'Failed to receive inference response from Gemma.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.formatConfigurationError(stage, msg);
+      return this.formatConfigurationError(stage, err);
     }
   }
 
@@ -809,8 +826,7 @@ Deliver the hint appropriate for this level. Follow "Think first. Hint second. S
       }
       return this.formatConfigurationError(currentStage, response.error || 'Failed to generate hint with Gemma.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.formatConfigurationError(currentStage, msg);
+      return this.formatConfigurationError(currentStage, err);
     }
   }
 
@@ -850,8 +866,7 @@ Introduce this milestone Socratically. Clearly explain what the candidate should
       }
       return this.formatConfigurationError(targetStage, response.error || 'Failed to advance stage with Gemma.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.formatConfigurationError(targetStage, msg);
+      return this.formatConfigurationError(targetStage, err);
     }
   }
 
@@ -888,8 +903,7 @@ Introduce this milestone Socratically. Clearly explain what the candidate should
       }
       return this.formatConfigurationError('constraints', response.error || 'Failed to explain concept with Gemma.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.formatConfigurationError('constraints', msg);
+      return this.formatConfigurationError('constraints', err);
     }
   }
 
@@ -936,20 +950,38 @@ ${code}
       }
       throw new Error(`Unable to parse valid code analysis JSON from Gemma (${model})`);
     } catch (err: unknown) {
+      let is402 = false;
+      let statusCode = 400;
+      if (err instanceof GemmaInferenceError) {
+        is402 = err.statusCode === 402;
+        statusCode = err.statusCode;
+      } else if (err instanceof Error && err.message.includes('402')) {
+        is402 = true;
+        statusCode = 402;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       return {
         correctness: 'Pending',
-        correctnessNote: `⚠️ ${provider.toUpperCase()} (${model}) inference error: ${msg}`,
+        correctnessNote: is402
+          ? `⚠️ Hugging Face Inference Credits Exhausted (HTTP 402): Account has no remaining inference credits.`
+          : `⚠️ ${provider.toUpperCase()} (${model}) inference error (HTTP ${statusCode}): ${msg}`,
         timeComplexity: 'Configuration Required',
         spaceComplexity: 'Configuration Required',
         bottlenecks: [`Inference failed: ${msg}`],
         detectedPattern: 'Setup Required',
-        optimizationOpportunities: [
-          'Configure HF_TOKEN in server .env or in Settings (⚙️) to enable real Gemma code analysis.',
-          'Switch to Socratic Mock (Dev Fallback) in Settings for offline development.'
-        ],
+        optimizationOpportunities: is402
+          ? [
+              'Add pre-paid credits or subscribe to PRO on Hugging Face: https://huggingface.co/settings/billing',
+              'Switch to Socratic Mock (Dev Fallback) in Settings (⚙️) for offline code analysis.'
+            ]
+          : [
+              'Configure HF_TOKEN in server .env or in Settings (⚙️) to enable real Gemma code analysis.',
+              'Switch to Socratic Mock (Dev Fallback) in Settings for offline development.'
+            ],
         progressiveHints: {
-          nudge: `Configure your ${provider.toUpperCase()} API key in Settings or .env to analyze this code.`,
+          nudge: is402
+            ? 'Inference credits are exhausted. Switch to Socratic Mock or add credits on Hugging Face.'
+            : `Configure your ${provider.toUpperCase()} API key in Settings or .env to analyze this code.`,
           hint: 'Configure API key in Settings or switch to Socratic Mock.',
           strongHint: 'Configure API key in Settings or switch to Socratic Mock.',
           explain: 'Configure API key in Settings or switch to Socratic Mock.'
@@ -998,32 +1030,130 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
       }
       return this.formatConfigurationError('optimize', response.error || 'Failed to receive code consultation from Gemma.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return this.formatConfigurationError('optimize', msg);
+      return this.formatConfigurationError('optimize', err);
     }
   }
 
-  private formatConfigurationError(stage: PedagogyStage, errorMessage: string): ChatMessage {
+  private formatConfigurationError(stage: PedagogyStage, err: unknown): ChatMessage {
     const provider = this.settings?.gemmaProvider || 'huggingface';
     const model = this.settings?.gemmaModel || 'google/gemma-3-12b-it';
+
+    let statusCode = 400;
+    let errorCategory: string = 'bad_request';
+    let errorMessage = '';
+
+    if (err instanceof GemmaInferenceError) {
+      statusCode = err.statusCode;
+      errorCategory = err.errorCategory;
+      errorMessage = err.message;
+    } else if (err instanceof Error) {
+      errorMessage = err.message;
+      if (errorMessage.includes('402')) {
+        statusCode = 402;
+        errorCategory = 'billing';
+      } else if (errorMessage.includes('401')) {
+        statusCode = 401;
+        errorCategory = 'authentication';
+      } else if (errorMessage.includes('403')) {
+        statusCode = 403;
+        errorCategory = 'permission';
+      } else if (errorMessage.includes('429')) {
+        statusCode = 429;
+        errorCategory = 'rate_limit';
+      } else if (/5\d\d/.test(errorMessage)) {
+        statusCode = 500;
+        errorCategory = 'provider_down';
+      }
+    } else {
+      errorMessage = String(err);
+    }
+
+    let title = 'Google Gemma Hosted Inference Error';
+    let categoryBadge = 'Configuration / Request Issue';
+    let explanation = '';
+    let resolutionSteps: string[] = [];
+    const suggestedActions = ['Retry Request', 'Switch to Socratic Mock', 'Open Settings (⚙️)'];
+
+    if (errorCategory === 'billing' || statusCode === 402) {
+      title = 'Hugging Face Inference Credits Exhausted (HTTP 402)';
+      categoryBadge = 'Account Billing / Credits Restriction';
+      explanation = `The hosted inference provider rejected the request because your Hugging Face account has **no remaining inference credits**.\n\n` +
+        `**Root Cause:** Your \`HF_TOKEN\` is valid and authenticated, but the Inference Providers router requires pre-paid credits or a PRO subscription to process inference for \`${model}\`. This is an **external account-side restriction**, not a bug in AlgoBuddy code.`;
+      resolutionSteps = [
+        `**Account-side action:** Add pre-paid credits or subscribe to PRO on [Hugging Face Billing Settings](https://huggingface.co/settings/billing).`,
+        `**Alternative Provider:** Open **Settings (⚙️)** to configure an alternative backend (such as OpenRouter or a custom self-hosted endpoint).`,
+        `**Continue Practicing Offline:** Click **"Switch to Socratic Mock"** below to continue learning with AlgoBuddy's deterministic pedagogical mentor.`
+      ];
+    } else if (errorCategory === 'authentication' || statusCode === 401) {
+      title = 'Hugging Face Authentication Failed (HTTP 401)';
+      categoryBadge = 'Authentication Failure';
+      explanation = `Hugging Face rejected the request because the API token is missing, expired, or invalid.`;
+      resolutionSteps = [
+        `Add a valid token to your project root \`.env\` file:\n   \`\`\`bash\n   HF_TOKEN=hf_your_actual_token\n   \`\`\``,
+        `Or enter your Hugging Face API token in **Settings (⚙️)**.`,
+        `Switch to **Socratic Mock (Dev Fallback)** in Settings for local development.`
+      ];
+    } else if (errorCategory === 'permission' || statusCode === 403) {
+      title = 'Hugging Face Access Forbidden (HTTP 403)';
+      categoryBadge = 'Permission Restriction';
+      explanation = `Hugging Face rejected access to \`${model}\`. Your token may lack fine-grained permissions or this model repository may require accepting terms of use.`;
+      resolutionSteps = [
+        `Check model access conditions on Hugging Face for \`${model}\`.`,
+        `Ensure your API token has **Inference** permissions enabled in [HF Access Tokens](https://huggingface.co/settings/tokens).`,
+        `Switch to **Socratic Mock (Dev Fallback)** in Settings to continue without remote credentials.`
+      ];
+    } else if (errorCategory === 'rate_limit' || statusCode === 429) {
+      title = 'Inference Rate Limit Exceeded (HTTP 429)';
+      categoryBadge = 'Rate Limit / Quota Restriction';
+      explanation = `Too many requests were sent in a short window. The provider has temporarily throttled inference calls.`;
+      resolutionSteps = [
+        `Wait a few moments and click **"Retry Request"**.`,
+        `Check your provider rate limits in [Hugging Face Settings](https://huggingface.co/settings/billing).`,
+        `Switch to **Socratic Mock (Dev Fallback)** for uninterrupted practice.`
+      ];
+    } else if (errorCategory === 'network' || statusCode === 503 || statusCode === 504) {
+      title = 'Google Gemma Hosted Inference Error (Network Failure)';
+      categoryBadge = 'Connection Timeout';
+      explanation = `AlgoBuddy was unable to establish a stable network connection to the inference endpoint.`;
+      resolutionSteps = [
+        `Check your local internet connection.`,
+        `Click **"Retry Request"** to reconnect.`,
+        `Switch to **Socratic Mock (Dev Fallback)** for offline operation.`
+      ];
+    } else if (errorCategory === 'provider_down' || statusCode >= 500) {
+      title = `Provider Server Error (HTTP ${statusCode})`;
+      categoryBadge = 'Upstream Provider Failure';
+      explanation = `The Hugging Face inference provider is experiencing server errors or temporary outage.`;
+      resolutionSteps = [
+        `Click **"Retry Request"** after a brief delay.`,
+        `Check [Hugging Face Status](https://status.huggingface.co/) for service degradation.`,
+        `Switch to **Socratic Mock (Dev Fallback)** to keep solving problems locally.`
+      ];
+    } else {
+      title = `Inference Request Error (HTTP ${statusCode})`;
+      categoryBadge = 'Invalid Request';
+      explanation = `The inference request could not be processed: ${errorMessage}`;
+      resolutionSteps = [
+        `Click **"Retry Request"**.`,
+        `Verify model settings and parameters in **Settings (⚙️)**.`,
+        `Switch to **Socratic Mock (Dev Fallback)** in Settings.`
+      ];
+    }
+
+    const content = `⚠️ **${title}**\n\n` +
+      `*Status: ${categoryBadge} • Code: ${statusCode}*\n\n` +
+      `${explanation}\n\n` +
+      `**Provider Error Message:**\n> ${errorMessage}\n\n` +
+      `**How to resolve:**\n` +
+      resolutionSteps.map((step, idx) => `${idx + 1}. ${step}`).join('\n');
 
     return {
       id: `err-${Date.now()}`,
       sender: 'mentor',
       stage,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      content: `⚠️ **Google Gemma Hosted Inference Error**\n\n` +
-        `Unable to reach Google Gemma model **\`${model}\`** via **${provider.toUpperCase()}**.\n\n` +
-        `**Error Details:**\n> ${errorMessage}\n\n` +
-        `**How to resolve:**\n` +
-        `1. Add your Hugging Face API token to your server \`.env\` file:\n` +
-        `   \`\`\`bash\n   HF_TOKEN=hf_your_token_here\n   \`\`\`\n` +
-        `2. Or open **Settings** (⚙️ top right in the navigation bar) and enter your API key.\n` +
-        `3. For offline development without an API key, switch the AI Engine to **Socratic Mock (Dev Fallback)** in Settings.`,
-      suggestedActions: [
-        'Open Settings (⚙️)',
-        'Retry Connection'
-      ]
+      content,
+      suggestedActions
     };
   }
 
@@ -1031,7 +1161,14 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
     systemPrompt: string, 
     prompt: string, 
     history?: ChatMessage[]
-  ): Promise<{ success: boolean; text?: string; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    text?: string;
+    error?: string;
+    statusCode?: number;
+    errorCategory?: 'billing' | 'authentication' | 'permission' | 'rate_limit' | 'provider_down' | 'network' | 'bad_request';
+    details?: string;
+  }> {
     const messages = history ? history.slice(-6).map(m => ({
       role: m.sender === 'user' ? ('user' as const) : ('assistant' as const),
       content: m.content
@@ -1050,21 +1187,48 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
     };
 
     const apiEndpoint = typeof window !== 'undefined' ? '/api/gemma' : 'http://127.0.0.1:5173/api/gemma';
-    const res = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let res: Response;
+    try {
+      res = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (networkErr: unknown) {
+      const msg = networkErr instanceof Error ? networkErr.message : String(networkErr);
+      throw new GemmaInferenceError(`Network connection failure reaching AlgoBuddy server: ${msg}`, 503, 'network');
+    }
 
-    let data: { success: boolean; text?: string; error?: string };
+    let data: {
+      success: boolean;
+      text?: string;
+      error?: string;
+      statusCode?: number;
+      errorCategory?: 'billing' | 'authentication' | 'permission' | 'rate_limit' | 'provider_down' | 'network' | 'bad_request';
+      details?: string;
+    };
+
     try {
       data = await res.json();
     } catch {
-      throw new Error(`Server returned HTTP ${res.status} with non-JSON response.`);
+      throw new GemmaInferenceError(`Server returned HTTP ${res.status} with non-JSON response.`, res.status, 'provider_down');
     }
 
     if (!res.ok || !data.success) {
-      throw new Error(data.error || `HTTP ${res.status}: Failed to reach Gemma inference endpoint`);
+      const statusCode = data.statusCode || res.status;
+      const category = data.errorCategory || (
+        statusCode === 402 ? 'billing' :
+        statusCode === 401 ? 'authentication' :
+        statusCode === 403 ? 'permission' :
+        statusCode === 429 ? 'rate_limit' :
+        statusCode >= 500 ? 'provider_down' : 'bad_request'
+      );
+      throw new GemmaInferenceError(
+        data.error || `HTTP ${statusCode}: Failed to reach Gemma inference endpoint`,
+        statusCode,
+        category,
+        data.details
+      );
     }
 
     return data;

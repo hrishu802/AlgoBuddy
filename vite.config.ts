@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
     'OPENROUTER_API_KEY'
   ];
   for (const key of serverKeys) {
-    if (env[key] && !process.env[key]) {
+    if (env[key]) {
       process.env[key] = env[key];
     }
   }

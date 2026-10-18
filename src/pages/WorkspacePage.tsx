@@ -48,6 +48,24 @@ interface WorkspacePageProps {
   settings: AISettings;
   onOpenNewProblem: () => void;
   onStatsUpdate?: () => void;
+  onOpenSettings?: () => void;
+  onUpdateSettings?: (settings: AISettings) => void;
+}
+
+const isErrorMessage = (msg: ChatMessage) =>
+  msg.id.startsWith('err-') ||
+  msg.type === 'error' ||
+  msg.content.includes('Hosted Inference Error') ||
+  msg.content.includes('Credits Exhausted');
+
+function appendMessageConsolidated(list: ChatMessage[], newMsg: ChatMessage): ChatMessage[] {
+  if (isErrorMessage(newMsg)) {
+    // If the list already ends with an error message, replace it instead of accumulating duplicates
+    if (list.length > 0 && isErrorMessage(list[list.length - 1])) {
+      return [...list.slice(0, -1), newMsg];
+    }
+  }
+  return [...list, newMsg];
 }
 
 export const WorkspacePage: React.FC<WorkspacePageProps> = ({
@@ -63,11 +81,22 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   settings,
   onOpenNewProblem,
   onStatsUpdate,
+  onOpenSettings,
+  onUpdateSettings,
 }) => {
   const [activeMode, setActiveMode] = useState<AppMode>(initialMode);
   const [currentStage, setCurrentStage] = useState<PedagogyStage>('constraints');
   const [highestHintLevel, setHighestHintLevel] = useState<HintLevel | null>(null);
   
+  // Track last failed action for seamless 1-click retry
+  const [lastFailedAction, setLastFailedAction] = useState<{
+    mode: AppMode;
+    type: 'init_problem' | 'init_concept' | 'chat_problem' | 'chat_concept' | 'hint' | 'stage' | 'code_analysis' | 'code_chat';
+    text?: string;
+    hintLevel?: HintLevel;
+    stage?: PedagogyStage;
+  } | null>(null);
+
   // Problem completion tracking
   const [isProblemCompleted, setIsProblemCompleted] = useState<boolean>(() => {
     return getCompletedProblemIds().has(currentProblem.id);
@@ -106,7 +135,8 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     hintLevel: HintLevel | null = highestHintLevel,
     completed: boolean = isProblemCompleted
   ) => {
-    if (messages.length === 0) return;
+    const cleanMessages = messages.filter(m => !isErrorMessage(m));
+    if (cleanMessages.length === 0) return;
     saveMentorSession({
       id: `session-problem-${currentProblem.id}`,
       title: currentProblem.title,
@@ -115,13 +145,14 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
       currentStage: stage,
       highestHintLevel: hintLevel,
       completed,
-      messages,
+      messages: cleanMessages,
       updatedAt: new Date().toISOString()
     });
   };
 
   const persistConceptSession = (messages: ChatMessage[]) => {
-    if (messages.length === 0) return;
+    const cleanMessages = messages.filter(m => !isErrorMessage(m));
+    if (cleanMessages.length === 0) return;
     saveMentorSession({
       id: `session-concept-${currentConcept.id}`,
       title: currentConcept.name,
@@ -129,7 +160,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
       conceptId: currentConcept.id,
       currentStage: 'constraints',
       highestHintLevel: null,
-      messages,
+      messages: cleanMessages,
       updatedAt: new Date().toISOString()
     });
   };
@@ -139,7 +170,8 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     code: string = userCode,
     lang: string = codeLanguage
   ) => {
-    if (messages.length === 0) return;
+    const cleanMessages = messages.filter(m => !isErrorMessage(m));
+    if (cleanMessages.length === 0) return;
     saveMentorSession({
       id: `session-code-${currentProblem.id}`,
       title: `Code: ${currentProblem.title}`,
@@ -149,7 +181,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
       language: lang,
       currentStage: 'optimize',
       highestHintLevel: null,
-      messages,
+      messages: cleanMessages,
       updatedAt: new Date().toISOString()
     });
   };
@@ -190,7 +222,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     setCodeAnalysis(null); // Clear stale code analysis when switching problems
 
     const saved = findSavedSession('problem', currentProblem.id);
-    if (saved && saved.messages && saved.messages.length > 0) {
+    if (saved && saved.messages && saved.messages.length > 0 && !saved.messages.every(isErrorMessage)) {
       setProblemMessages(saved.messages);
       setCurrentStage(saved.currentStage || 'constraints');
       setHighestHintLevel(saved.highestHintLevel ?? null);
@@ -206,19 +238,27 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           setProblemMessages(initialMsgs);
           setCurrentStage('constraints');
           setHighestHintLevel(null);
-          saveMentorSession({
-            id: `session-problem-${currentProblem.id}`,
-            title: currentProblem.title,
-            mode: 'problem',
-            problemId: currentProblem.id,
-            currentStage: 'constraints',
-            highestHintLevel: null,
-            messages: initialMsgs,
-            updatedAt: new Date().toISOString()
-          });
+          if (isErrorMessage(welcomeMsg)) {
+            setLastFailedAction({ mode: 'problem', type: 'init_problem' });
+          } else {
+            setLastFailedAction(null);
+            saveMentorSession({
+              id: `session-problem-${currentProblem.id}`,
+              title: currentProblem.title,
+              mode: 'problem',
+              problemId: currentProblem.id,
+              currentStage: 'constraints',
+              highestHintLevel: null,
+              messages: initialMsgs,
+              updatedAt: new Date().toISOString()
+            });
+          }
         }
       } catch (err) {
         console.error(err);
+        if (isMounted) {
+          setLastFailedAction({ mode: 'problem', type: 'init_problem' });
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -231,7 +271,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   useEffect(() => {
     let isMounted = true;
     const saved = findSavedSession('concept', currentConcept.id);
-    if (saved && saved.messages && saved.messages.length > 0) {
+    if (saved && saved.messages && saved.messages.length > 0 && !saved.messages.every(isErrorMessage)) {
       setConceptMessages(saved.messages);
       return () => { isMounted = false; };
     }
@@ -243,19 +283,27 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         if (isMounted) {
           const initialMsgs = [msg];
           setConceptMessages(initialMsgs);
-          saveMentorSession({
-            id: `session-concept-${currentConcept.id}`,
-            title: currentConcept.name,
-            mode: 'concept',
-            conceptId: currentConcept.id,
-            currentStage: 'constraints',
-            highestHintLevel: null,
-            messages: initialMsgs,
-            updatedAt: new Date().toISOString()
-          });
+          if (isErrorMessage(msg)) {
+            setLastFailedAction({ mode: 'concept', type: 'init_concept' });
+          } else {
+            setLastFailedAction(null);
+            saveMentorSession({
+              id: `session-concept-${currentConcept.id}`,
+              title: currentConcept.name,
+              mode: 'concept',
+              conceptId: currentConcept.id,
+              currentStage: 'constraints',
+              highestHintLevel: null,
+              messages: initialMsgs,
+              updatedAt: new Date().toISOString()
+            });
+          }
         }
       } catch (err) {
         console.error(err);
+        if (isMounted) {
+          setLastFailedAction({ mode: 'concept', type: 'init_concept' });
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -275,7 +323,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   }, [currentProblem.id]);
 
   // Handle User Chat Message
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (text: string): Promise<boolean> => {
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
       sender: 'user',
@@ -284,7 +332,10 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     };
 
     if (activeMode === 'problem') {
-      const nextHistory = [...problemMessages, userMsg];
+      const cleanHistory = problemMessages.length > 0 && isErrorMessage(problemMessages[problemMessages.length - 1])
+        ? problemMessages.slice(0, -1)
+        : problemMessages;
+      const nextHistory = [...cleanHistory, userMsg];
       setProblemMessages(nextHistory);
       setIsLoading(true);
       try {
@@ -294,53 +345,229 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           text,
           nextHistory
         );
-        const updated = [...nextHistory, response];
+        const updated = appendMessageConsolidated(nextHistory, response);
         setProblemMessages(updated);
         persistProblemSession(updated);
+        if (isErrorMessage(response)) {
+          setLastFailedAction({ mode: 'problem', type: 'chat_problem', text });
+          return false;
+        } else {
+          setLastFailedAction(null);
+          return true;
+        }
       } catch (e) {
         console.error(e);
+        setLastFailedAction({ mode: 'problem', type: 'chat_problem', text });
+        return false;
       } finally {
         setIsLoading(false);
       }
     } else if (activeMode === 'concept') {
-      const nextHistory = [...conceptMessages, userMsg];
+      const cleanHistory = conceptMessages.length > 0 && isErrorMessage(conceptMessages[conceptMessages.length - 1])
+        ? conceptMessages.slice(0, -1)
+        : conceptMessages;
+      const nextHistory = [...cleanHistory, userMsg];
       setConceptMessages(nextHistory);
       setIsLoading(true);
       try {
         const response = await aiService.explainConcept(currentConcept, text);
-        const updated = [...nextHistory, response];
+        const updated = appendMessageConsolidated(nextHistory, response);
         setConceptMessages(updated);
         persistConceptSession(updated);
+        if (isErrorMessage(response)) {
+          setLastFailedAction({ mode: 'concept', type: 'chat_concept', text });
+          return false;
+        } else {
+          setLastFailedAction(null);
+          return true;
+        }
       } catch (e) {
         console.error(e);
+        setLastFailedAction({ mode: 'concept', type: 'chat_concept', text });
+        return false;
       } finally {
         setIsLoading(false);
       }
     } else {
-      const nextHistory = [...codeMessages, userMsg];
+      const cleanHistory = codeMessages.length > 0 && isErrorMessage(codeMessages[codeMessages.length - 1])
+        ? codeMessages.slice(0, -1)
+        : codeMessages;
+      const nextHistory = [...cleanHistory, userMsg];
       setCodeMessages(nextHistory);
       setIsLoading(true);
       try {
         if (codeAnalysis) {
           const response = await aiService.askCodeQuestion(userCode, codeAnalysis, text, nextHistory);
-          const updated = [...nextHistory, response];
+          const updated = appendMessageConsolidated(nextHistory, response);
           setCodeMessages(updated);
           persistCodeSession(updated);
+          if (isErrorMessage(response)) {
+            setLastFailedAction({ mode: 'code', type: 'code_chat', text });
+            return false;
+          } else {
+            setLastFailedAction(null);
+            return true;
+          }
         } else {
-          // Trigger analysis with active problem context
           const analysis = await aiService.analyzeCode(userCode, codeLanguage, activeProblemContext);
           setCodeAnalysis(analysis);
           const response = await aiService.askCodeQuestion(userCode, analysis, text, nextHistory);
-          const updated = [...nextHistory, response];
+          const updated = appendMessageConsolidated(nextHistory, response);
           setCodeMessages(updated);
           persistCodeSession(updated);
+          if (isErrorMessage(response)) {
+            setLastFailedAction({ mode: 'code', type: 'code_chat', text });
+            return false;
+          } else {
+            setLastFailedAction(null);
+            return true;
+          }
         }
       } catch (e) {
         console.error(e);
+        setLastFailedAction({ mode: 'code', type: 'code_chat', text });
+        return false;
       } finally {
         setIsLoading(false);
       }
     }
+  };
+
+  // Handle 1-click retry of the last failed request without stacking identical cards
+  const handleRetry = async () => {
+    setIsLoading(true);
+
+    try {
+      const isInitialProblem = activeMode === 'problem' &&
+        (lastFailedAction?.type === 'init_problem' || !problemMessages.some(m => m.sender === 'user'));
+      const isInitialConcept = activeMode === 'concept' &&
+        (lastFailedAction?.type === 'init_concept' || !conceptMessages.some(m => m.sender === 'user'));
+
+      if (isInitialProblem) {
+        const welcomeMsg = await aiService.startProblemSession(currentProblem);
+        const updated = [welcomeMsg];
+        setProblemMessages(updated);
+        if (!isErrorMessage(welcomeMsg)) {
+          persistProblemSession(updated);
+          setLastFailedAction(null);
+        } else {
+          setLastFailedAction({ mode: 'problem', type: 'init_problem' });
+        }
+      } else if (isInitialConcept) {
+        const msg = await aiService.explainConcept(currentConcept);
+        const updated = [msg];
+        setConceptMessages(updated);
+        if (!isErrorMessage(msg)) {
+          persistConceptSession(updated);
+          setLastFailedAction(null);
+        } else {
+          setLastFailedAction({ mode: 'concept', type: 'init_concept' });
+        }
+      } else if (lastFailedAction?.type === 'chat_problem' && lastFailedAction.text) {
+        const cleanHistory = problemMessages.filter(m => !isErrorMessage(m));
+        setProblemMessages(cleanHistory);
+        const response = await aiService.askProblemQuestion(
+          currentProblem,
+          currentStage,
+          lastFailedAction.text,
+          cleanHistory
+        );
+        const updated = appendMessageConsolidated(cleanHistory, response);
+        setProblemMessages(updated);
+        persistProblemSession(updated);
+        if (!isErrorMessage(response)) setLastFailedAction(null);
+      } else if (lastFailedAction?.type === 'chat_concept' && lastFailedAction.text) {
+        const cleanHistory = conceptMessages.filter(m => !isErrorMessage(m));
+        setConceptMessages(cleanHistory);
+        const response = await aiService.explainConcept(currentConcept, lastFailedAction.text);
+        const updated = appendMessageConsolidated(cleanHistory, response);
+        setConceptMessages(updated);
+        persistConceptSession(updated);
+        if (!isErrorMessage(response)) setLastFailedAction(null);
+      } else if (lastFailedAction?.type === 'hint' && lastFailedAction.hintLevel) {
+        const cleanHistory = problemMessages.filter(m => !isErrorMessage(m));
+        setProblemMessages(cleanHistory);
+        const response = await aiService.requestHint(currentProblem, lastFailedAction.hintLevel, currentStage);
+        const updated = appendMessageConsolidated(cleanHistory, response);
+        setProblemMessages(updated);
+        persistProblemSession(updated, currentStage, lastFailedAction.hintLevel);
+        if (!isErrorMessage(response)) setLastFailedAction(null);
+      } else if (lastFailedAction?.type === 'stage' && lastFailedAction.stage) {
+        const cleanHistory = problemMessages.filter(m => !isErrorMessage(m));
+        setProblemMessages(cleanHistory);
+        const response = await aiService.advancePedagogyStage(currentProblem, lastFailedAction.stage);
+        const updated = appendMessageConsolidated(cleanHistory, response);
+        setProblemMessages(updated);
+        persistProblemSession(updated, lastFailedAction.stage, highestHintLevel);
+        if (!isErrorMessage(response)) setLastFailedAction(null);
+      } else if (lastFailedAction?.type === 'code_analysis') {
+        await handleTriggerAnalysis();
+      } else {
+        // Fallback: retry last user message
+        const currentList = activeMode === 'problem' ? problemMessages : activeMode === 'concept' ? conceptMessages : codeMessages;
+        const lastUser = [...currentList].reverse().find(m => m.sender === 'user');
+        if (lastUser) {
+          await handleSendMessage(lastUser.content);
+        }
+      }
+    } catch (err) {
+      console.error('Retry execution failed:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle action chip clicks with support for Retry, Settings, and Socratic Mock
+  const handleActionChip = async (action: string) => {
+    if (action === 'Retry Request' || action === 'Retry Connection') {
+      await handleRetry();
+      return;
+    }
+
+    if (action === 'Switch to Socratic Mock' || action === 'Switch to Mock (Dev Fallback)') {
+      const mockSettings: AISettings = { ...settings, provider: 'mock' };
+      onUpdateSettings?.(mockSettings);
+
+      // Explicitly switch to Socratic Mock mentor without reloading
+      const { MockAIService } = await import('../services/ai/aiService');
+      const mockService = new MockAIService();
+      setIsLoading(true);
+      try {
+        if (activeMode === 'problem') {
+          const cleanHistory = problemMessages.filter(m => !isErrorMessage(m));
+          const lastUser = [...cleanHistory].reverse().find(m => m.sender === 'user');
+          if (lastUser) {
+            const resp = await mockService.askProblemQuestion(currentProblem, currentStage, lastUser.content, cleanHistory);
+            const updated = [...cleanHistory, resp];
+            setProblemMessages(updated);
+            persistProblemSession(updated);
+          } else {
+            const welcome = await mockService.startProblemSession(currentProblem);
+            const updated = [welcome];
+            setProblemMessages(updated);
+            persistProblemSession(updated);
+          }
+        } else if (activeMode === 'concept') {
+          const cleanHistory = conceptMessages.filter(m => !isErrorMessage(m));
+          const lastUser = [...cleanHistory].reverse().find(m => m.sender === 'user');
+          const resp = await mockService.explainConcept(currentConcept, lastUser?.content);
+          const updated = [...cleanHistory, resp];
+          setConceptMessages(updated);
+          persistConceptSession(updated);
+        }
+        setLastFailedAction(null);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (action === 'Open Settings (⚙️)' || action === 'Open Settings') {
+      onOpenSettings?.();
+      return;
+    }
+
+    await handleSendMessage(action);
   };
 
   // Handle Progressive Hint Request
@@ -358,11 +585,20 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
 
     try {
       const hintMsg = await aiService.requestHint(currentProblem, level, currentStage);
-      const updated = [...problemMessages, hintMsg];
+      const cleanHistory = problemMessages.length > 0 && isErrorMessage(problemMessages[problemMessages.length - 1])
+        ? problemMessages.slice(0, -1)
+        : problemMessages;
+      const updated = appendMessageConsolidated(cleanHistory, hintMsg);
       setProblemMessages(updated);
       persistProblemSession(updated, currentStage, level);
+      if (isErrorMessage(hintMsg)) {
+        setLastFailedAction({ mode: 'problem', type: 'hint', hintLevel: level });
+      } else {
+        setLastFailedAction(null);
+      }
     } catch (e) {
       console.error(e);
+      setLastFailedAction({ mode: 'problem', type: 'hint', hintLevel: level });
     } finally {
       setIsLoading(false);
     }
@@ -383,11 +619,20 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
 
     try {
       const stageMsg = await aiService.advancePedagogyStage(currentProblem, stage);
-      const updated = [...problemMessages, stageMsg];
+      const cleanHistory = problemMessages.length > 0 && isErrorMessage(problemMessages[problemMessages.length - 1])
+        ? problemMessages.slice(0, -1)
+        : problemMessages;
+      const updated = appendMessageConsolidated(cleanHistory, stageMsg);
       setProblemMessages(updated);
       persistProblemSession(updated, stage, highestHintLevel);
+      if (isErrorMessage(stageMsg)) {
+        setLastFailedAction({ mode: 'problem', type: 'stage', stage });
+      } else {
+        setLastFailedAction(null);
+      }
     } catch (e) {
       console.error(e);
+      setLastFailedAction({ mode: 'problem', type: 'stage', stage });
     } finally {
       setIsLoading(false);
     }
@@ -427,11 +672,16 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           'Show progressive hint'
         ]
       };
-      const updated = [...codeMessages, introMsg];
+      const cleanHistory = codeMessages.length > 0 && isErrorMessage(codeMessages[codeMessages.length - 1])
+        ? codeMessages.slice(0, -1)
+        : codeMessages;
+      const updated = appendMessageConsolidated(cleanHistory, introMsg);
       setCodeMessages(updated);
       persistCodeSession(updated);
+      setLastFailedAction(null);
     } catch (e) {
       console.error(e);
+      setLastFailedAction({ mode: 'code', type: 'code_analysis' });
     } finally {
       setIsAnalyzingCode(false);
       setIsLoading(false);
@@ -469,6 +719,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
 
   // Reset Session
   const handleResetSession = () => {
+    setLastFailedAction(null);
     if (activeMode === 'problem') {
       deleteSavedSession(`session-problem-${currentProblem.id}`);
       aiService.startProblemSession(currentProblem).then(msg => {
@@ -633,7 +884,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
             isLoading={isLoading}
             currentStage={currentStage}
             mode={activeMode}
-            onSelectActionChip={handleSendMessage}
+            onSelectActionChip={handleActionChip}
           />
         </div>
 

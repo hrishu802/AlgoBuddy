@@ -6,6 +6,13 @@ export {
   executeGemmaInference,
   DEFAULT_GEMMA_PROVIDER,
   DEFAULT_GEMMA_MODEL,
-  DEFAULT_HF_ROUTER_ENDPOINT
+  DEFAULT_HF_ROUTER_ENDPOINT,
+  GemmaProviderError,
+  sanitizeSecret
 } from '../api/gemma.ts';
-export type { GemmaRequestBody, ChatMessagePayload } from '../api/gemma.ts';
+export type {
+  GemmaRequestBody,
+  ChatMessagePayload,
+  GemmaErrorCategory,
+  GemmaHealthResponse
+} from '../api/gemma.ts';

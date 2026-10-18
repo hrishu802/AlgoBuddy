@@ -223,6 +223,8 @@ export const App: React.FC = () => {
             settings={settings}
             onOpenNewProblem={() => setIsNewProblemOpen(true)}
             onStatsUpdate={refreshStats}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onUpdateSettings={handleSaveSettings}
           />
         )}
 
