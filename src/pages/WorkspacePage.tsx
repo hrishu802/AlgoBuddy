@@ -26,6 +26,14 @@ import {
   PanelLeftOpen,
   HelpCircle
 } from 'lucide-react';
+import { 
+  findSavedSession, 
+  saveMentorSession, 
+  deleteSavedSession,
+  recordLearningEvent,
+  getCompletedProblemIds
+} from '../services/storage';
+import { toLocalDateString } from '../services/analytics';
 
 interface WorkspacePageProps {
   initialMode: AppMode;
@@ -39,6 +47,7 @@ interface WorkspacePageProps {
   aiService: AIService;
   settings: AISettings;
   onOpenNewProblem: () => void;
+  onStatsUpdate?: () => void;
 }
 
 export const WorkspacePage: React.FC<WorkspacePageProps> = ({
@@ -53,11 +62,21 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   aiService,
   settings,
   onOpenNewProblem,
+  onStatsUpdate,
 }) => {
   const [activeMode, setActiveMode] = useState<AppMode>(initialMode);
   const [currentStage, setCurrentStage] = useState<PedagogyStage>('constraints');
   const [highestHintLevel, setHighestHintLevel] = useState<HintLevel | null>(null);
   
+  // Problem completion tracking
+  const [isProblemCompleted, setIsProblemCompleted] = useState<boolean>(() => {
+    return getCompletedProblemIds().has(currentProblem.id);
+  });
+
+  useEffect(() => {
+    setIsProblemCompleted(getCompletedProblemIds().has(currentProblem.id));
+  }, [currentProblem.id]);
+
   // Chat State per mode
   const [problemMessages, setProblemMessages] = useState<ChatMessage[]>([]);
   const [conceptMessages, setConceptMessages] = useState<ChatMessage[]>([]);
@@ -75,22 +94,128 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   // Pane collapse toggle for mobile/responsive focus
   const [contextCollapsed, setContextCollapsed] = useState(false);
 
+  // Active problem context for code analysis
+  const activeProblemContext = currentProblem
+    ? `Problem: "${currentProblem.title}" (${currentProblem.difficulty})\nConstraints: ${currentProblem.constraints.join(' | ')}\nTarget Complexity: Time ${currentProblem.optimalComplexity.time}, Space ${currentProblem.optimalComplexity.space}`
+    : undefined;
+
+  // Session persistence helpers
+  const persistProblemSession = (
+    messages: ChatMessage[],
+    stage: PedagogyStage = currentStage,
+    hintLevel: HintLevel | null = highestHintLevel,
+    completed: boolean = isProblemCompleted
+  ) => {
+    if (messages.length === 0) return;
+    saveMentorSession({
+      id: `session-problem-${currentProblem.id}`,
+      title: currentProblem.title,
+      mode: 'problem',
+      problemId: currentProblem.id,
+      currentStage: stage,
+      highestHintLevel: hintLevel,
+      completed,
+      messages,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const persistConceptSession = (messages: ChatMessage[]) => {
+    if (messages.length === 0) return;
+    saveMentorSession({
+      id: `session-concept-${currentConcept.id}`,
+      title: currentConcept.name,
+      mode: 'concept',
+      conceptId: currentConcept.id,
+      currentStage: 'constraints',
+      highestHintLevel: null,
+      messages,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const persistCodeSession = (
+    messages: ChatMessage[],
+    code: string = userCode,
+    lang: string = codeLanguage
+  ) => {
+    if (messages.length === 0) return;
+    saveMentorSession({
+      id: `session-code-${currentProblem.id}`,
+      title: `Code: ${currentProblem.title}`,
+      mode: 'code',
+      problemId: currentProblem.id,
+      userCode: code,
+      language: lang,
+      currentStage: 'optimize',
+      highestHintLevel: null,
+      messages,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
   // Sync mode with props
   useEffect(() => {
     setActiveMode(initialMode);
   }, [initialMode]);
 
-  // Initialize Problem Session
+  // Idempotent Problem Opened Tracking
+  useEffect(() => {
+    recordLearningEvent({
+      id: `open-${currentProblem.id}-${toLocalDateString(new Date())}`,
+      type: 'problem_opened',
+      targetId: currentProblem.id,
+      targetType: 'problem',
+      metadata: { stage: currentStage }
+    });
+    onStatsUpdate?.();
+  }, [currentProblem.id]);
+
+  // Idempotent Concept Studied Tracking
+  useEffect(() => {
+    if (activeMode === 'concept') {
+      recordLearningEvent({
+        id: `concept-${currentConcept.id}-${toLocalDateString(new Date())}`,
+        type: 'concept_studied',
+        targetId: currentConcept.id,
+        targetType: 'concept'
+      });
+      onStatsUpdate?.();
+    }
+  }, [activeMode, currentConcept.id]);
+
+  // Initialize or Restore Problem Session
   useEffect(() => {
     let isMounted = true;
+    setCodeAnalysis(null); // Clear stale code analysis when switching problems
+
+    const saved = findSavedSession('problem', currentProblem.id);
+    if (saved && saved.messages && saved.messages.length > 0) {
+      setProblemMessages(saved.messages);
+      setCurrentStage(saved.currentStage || 'constraints');
+      setHighestHintLevel(saved.highestHintLevel ?? null);
+      return () => { isMounted = false; };
+    }
+
     async function initProblem() {
       setIsLoading(true);
       try {
         const welcomeMsg = await aiService.startProblemSession(currentProblem);
         if (isMounted) {
-          setProblemMessages([welcomeMsg]);
+          const initialMsgs = [welcomeMsg];
+          setProblemMessages(initialMsgs);
           setCurrentStage('constraints');
           setHighestHintLevel(null);
+          saveMentorSession({
+            id: `session-problem-${currentProblem.id}`,
+            title: currentProblem.title,
+            mode: 'problem',
+            problemId: currentProblem.id,
+            currentStage: 'constraints',
+            highestHintLevel: null,
+            messages: initialMsgs,
+            updatedAt: new Date().toISOString()
+          });
         }
       } catch (err) {
         console.error(err);
@@ -102,15 +227,32 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     return () => { isMounted = false; };
   }, [currentProblem.id]);
 
-  // Initialize Concept Session
+  // Initialize or Restore Concept Session
   useEffect(() => {
     let isMounted = true;
+    const saved = findSavedSession('concept', currentConcept.id);
+    if (saved && saved.messages && saved.messages.length > 0) {
+      setConceptMessages(saved.messages);
+      return () => { isMounted = false; };
+    }
+
     async function initConcept() {
       setIsLoading(true);
       try {
         const msg = await aiService.explainConcept(currentConcept);
         if (isMounted) {
-          setConceptMessages([msg]);
+          const initialMsgs = [msg];
+          setConceptMessages(initialMsgs);
+          saveMentorSession({
+            id: `session-concept-${currentConcept.id}`,
+            title: currentConcept.name,
+            mode: 'concept',
+            conceptId: currentConcept.id,
+            currentStage: 'constraints',
+            highestHintLevel: null,
+            messages: initialMsgs,
+            updatedAt: new Date().toISOString()
+          });
         }
       } catch (err) {
         console.error(err);
@@ -121,6 +263,16 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     initConcept();
     return () => { isMounted = false; };
   }, [currentConcept.id]);
+
+  // Restore Code Session on problem change
+  useEffect(() => {
+    const saved = findSavedSession('code', currentProblem.id) || findSavedSession('code');
+    if (saved && saved.messages && saved.messages.length > 0) {
+      setCodeMessages(saved.messages);
+      if (saved.userCode) setUserCode(saved.userCode);
+      if (saved.language) setCodeLanguage(saved.language);
+    }
+  }, [currentProblem.id]);
 
   // Handle User Chat Message
   const handleSendMessage = async (text: string) => {
@@ -142,7 +294,9 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           text,
           nextHistory
         );
-        setProblemMessages(prev => [...prev, response]);
+        const updated = [...nextHistory, response];
+        setProblemMessages(updated);
+        persistProblemSession(updated);
       } catch (e) {
         console.error(e);
       } finally {
@@ -154,7 +308,9 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
       setIsLoading(true);
       try {
         const response = await aiService.explainConcept(currentConcept, text);
-        setConceptMessages(prev => [...prev, response]);
+        const updated = [...nextHistory, response];
+        setConceptMessages(updated);
+        persistConceptSession(updated);
       } catch (e) {
         console.error(e);
       } finally {
@@ -167,13 +323,17 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
       try {
         if (codeAnalysis) {
           const response = await aiService.askCodeQuestion(userCode, codeAnalysis, text, nextHistory);
-          setCodeMessages(prev => [...prev, response]);
+          const updated = [...nextHistory, response];
+          setCodeMessages(updated);
+          persistCodeSession(updated);
         } else {
-          // Trigger analysis if not yet run
-          const analysis = await aiService.analyzeCode(userCode, codeLanguage);
+          // Trigger analysis with active problem context
+          const analysis = await aiService.analyzeCode(userCode, codeLanguage, activeProblemContext);
           setCodeAnalysis(analysis);
           const response = await aiService.askCodeQuestion(userCode, analysis, text, nextHistory);
-          setCodeMessages(prev => [...prev, response]);
+          const updated = [...nextHistory, response];
+          setCodeMessages(updated);
+          persistCodeSession(updated);
         }
       } catch (e) {
         console.error(e);
@@ -188,9 +348,19 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     setIsLoading(true);
     setHighestHintLevel(level);
 
+    recordLearningEvent({
+      type: 'hint_requested',
+      targetId: currentProblem.id,
+      targetType: 'problem',
+      metadata: { hintLevel: level }
+    });
+    onStatsUpdate?.();
+
     try {
       const hintMsg = await aiService.requestHint(currentProblem, level, currentStage);
-      setProblemMessages(prev => [...prev, hintMsg]);
+      const updated = [...problemMessages, hintMsg];
+      setProblemMessages(updated);
+      persistProblemSession(updated, currentStage, level);
     } catch (e) {
       console.error(e);
     } finally {
@@ -202,9 +372,20 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   const handleSelectStage = async (stage: PedagogyStage) => {
     setCurrentStage(stage);
     setIsLoading(true);
+
+    recordLearningEvent({
+      type: 'stage_advanced',
+      targetId: currentProblem.id,
+      targetType: 'problem',
+      metadata: { stage }
+    });
+    onStatsUpdate?.();
+
     try {
       const stageMsg = await aiService.advancePedagogyStage(currentProblem, stage);
-      setProblemMessages(prev => [...prev, stageMsg]);
+      const updated = [...problemMessages, stageMsg];
+      setProblemMessages(updated);
+      persistProblemSession(updated, stage, highestHintLevel);
     } catch (e) {
       console.error(e);
     } finally {
@@ -216,8 +397,17 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   const handleTriggerAnalysis = async () => {
     setIsAnalyzingCode(true);
     setIsLoading(true);
+
+    recordLearningEvent({
+      type: 'code_analyzed',
+      targetId: currentProblem.id,
+      targetType: 'code',
+      metadata: { language: codeLanguage }
+    });
+    onStatsUpdate?.();
+
     try {
-      const analysis = await aiService.analyzeCode(userCode, codeLanguage);
+      const analysis = await aiService.analyzeCode(userCode, codeLanguage, activeProblemContext);
       setCodeAnalysis(analysis);
 
       const introMsg: ChatMessage = {
@@ -225,6 +415,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         sender: 'mentor',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         content: `### 🔍 Code Analysis Completed!\n\n` +
+          `• **Target Problem:** **${currentProblem.title}**\n` +
           `• **Estimated Time Complexity:** \`${analysis.timeComplexity}\`\n` +
           `• **Estimated Space Complexity:** \`${analysis.spaceComplexity}\`\n` +
           `• **Detected Pattern:** **${analysis.detectedPattern}**\n\n` +
@@ -236,7 +427,9 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           'Show progressive hint'
         ]
       };
-      setCodeMessages(prev => [...prev, introMsg]);
+      const updated = [...codeMessages, introMsg];
+      setCodeMessages(updated);
+      persistCodeSession(updated);
     } catch (e) {
       console.error(e);
     } finally {
@@ -245,19 +438,55 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
     }
   };
 
+  // Handle explicit problem completion contract
+  const handleToggleComplete = () => {
+    if (isProblemCompleted) {
+      recordLearningEvent({
+        type: 'problem_uncompleted',
+        targetId: currentProblem.id,
+        targetType: 'problem'
+      });
+      setIsProblemCompleted(false);
+      persistProblemSession(problemMessages, currentStage, highestHintLevel, false);
+      onStatsUpdate?.();
+    } else {
+      recordLearningEvent({
+        type: 'problem_completed',
+        targetId: currentProblem.id,
+        targetType: 'problem',
+        metadata: {
+          selfReported: true,
+          verification: 'self_reported',
+          highestHintLevel,
+          stageReached: currentStage
+        }
+      });
+      setIsProblemCompleted(true);
+      persistProblemSession(problemMessages, currentStage, highestHintLevel, true);
+      onStatsUpdate?.();
+    }
+  };
+
   // Reset Session
   const handleResetSession = () => {
     if (activeMode === 'problem') {
+      deleteSavedSession(`session-problem-${currentProblem.id}`);
       aiService.startProblemSession(currentProblem).then(msg => {
-        setProblemMessages([msg]);
+        const resetMsgs = [msg];
+        setProblemMessages(resetMsgs);
         setCurrentStage('constraints');
         setHighestHintLevel(null);
+        persistProblemSession(resetMsgs, 'constraints', null, isProblemCompleted);
       });
     } else if (activeMode === 'concept') {
+      deleteSavedSession(`session-concept-${currentConcept.id}`);
       aiService.explainConcept(currentConcept).then(msg => {
-        setConceptMessages([msg]);
+        const resetMsgs = [msg];
+        setConceptMessages(resetMsgs);
+        persistConceptSession(resetMsgs);
       });
     } else {
+      deleteSavedSession(`session-code-${currentProblem.id}`);
       setCodeMessages([]);
       setCodeAnalysis(null);
     }
@@ -362,6 +591,9 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
               allProblems={allProblems}
               onSelectProblem={onSelectProblem}
               onOpenNewProblem={onOpenNewProblem}
+              isCompleted={isProblemCompleted}
+              highestHintLevel={highestHintLevel}
+              onToggleComplete={handleToggleComplete}
             />
           )}
 
@@ -371,6 +603,11 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
               allConcepts={allConcepts}
               onSelectConcept={onSelectConcept}
               onUpdateStatus={onUpdateConceptStatus}
+              allProblems={allProblems}
+              onSelectProblem={(prob) => {
+                onSelectProblem(prob);
+                setActiveMode('problem');
+              }}
             />
           )}
 

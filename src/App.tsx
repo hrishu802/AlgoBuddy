@@ -17,8 +17,16 @@ import {
   saveAISettings, 
   getAllProblems, 
   saveCustomProblem,
-  DEFAULT_STATS
+  DEFAULT_STATS,
+  resetUserStats,
+  loadLearningEvents,
+  recordLearningEvent,
+  loadProblemCompletions,
+  loadSpacedReviews,
+  recordReviewCompletion
 } from './services/storage';
+import { computeUserStats } from './services/analytics';
+import { generateAdaptiveRecommendations, getDueReviews } from './services/recommendations';
 import { getAIService } from './services/ai/aiService';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './pages/LandingPage';
@@ -39,9 +47,64 @@ export const App: React.FC = () => {
   const [selectedProblem, setSelectedProblem] = useState<Problem>(() => problems[0] || PROBLEMS[0]);
   const [selectedConcept, setSelectedConcept] = useState<Concept>(() => concepts[0] || CONCEPTS[0]);
 
-  // Persistent User Data & AI Settings
-  const [stats, setStats] = useState<UserStats>(() => loadUserStats());
+  // Spaced reviews state
+  const [reviews, setReviews] = useState(() => loadSpacedReviews());
+
+  // Persistent User Data & AI Settings (synchronized with recorded learning events & completions)
+  const [stats, setStats] = useState<UserStats>(() => {
+    const events = loadLearningEvents();
+    const completions = loadProblemCompletions();
+    const allProbs = getAllProblems();
+    if (events.length > 0 || completions.size > 0) {
+      const fresh = computeUserStats(events, allProbs, CONCEPTS, new Date(), completions);
+      saveUserStats(fresh);
+      return fresh;
+    }
+    return loadUserStats();
+  });
   const [settings, setSettings] = useState<AISettings>(() => loadAISettings());
+
+  // Refresh stats deterministically from learning events & completions
+  const refreshStats = () => {
+    const events = loadLearningEvents();
+    const completions = loadProblemCompletions();
+    setReviews(loadSpacedReviews());
+    if (events.length > 0 || completions.size > 0) {
+      const freshStats = computeUserStats(events, problems, concepts, new Date(), completions);
+      setStats(freshStats);
+      saveUserStats(freshStats);
+    } else {
+      setStats(DEFAULT_STATS);
+      saveUserStats(DEFAULT_STATS);
+    }
+  };
+
+  // Adaptive recommendations memoized strictly from stored evidence
+  const adaptiveRecommendations = useMemo(() => {
+    const events = loadLearningEvents();
+    const completions = loadProblemCompletions();
+    return generateAdaptiveRecommendations({
+      allProblems: problems,
+      allConcepts: concepts,
+      stats,
+      events,
+      completions,
+      reviews,
+      currentProblemId: selectedProblem?.id
+    });
+  }, [problems, concepts, stats, reviews, selectedProblem?.id]);
+
+  // Due reviews calculated deterministically from active schedule
+  const dueReviews = useMemo(() => {
+    return getDueReviews(problems, reviews);
+  }, [problems, reviews]);
+
+  // Handle explicit spaced review completion action
+  const handleCompleteReview = (problemId: string) => {
+    recordReviewCompletion(problemId);
+    setReviews(loadSpacedReviews());
+    refreshStats();
+  };
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -87,14 +150,13 @@ export const App: React.FC = () => {
     setConcepts(prev => 
       prev.map(c => c.id === conceptId ? { ...c, status } : c)
     );
-    setStats(prev => {
-      const updated = {
-        ...prev,
-        conceptsReviewed: Math.min(prev.conceptsReviewed + 1, 14)
-      };
-      saveUserStats(updated);
-      return updated;
+    recordLearningEvent({
+      type: 'concept_studied',
+      targetId: conceptId,
+      targetType: 'concept',
+      metadata: { status }
     });
+    refreshStats();
   };
 
   // Add Custom Problem
@@ -115,8 +177,9 @@ export const App: React.FC = () => {
 
   // Reset Stats
   const handleResetStats = () => {
-    setStats(DEFAULT_STATS);
-    saveUserStats(DEFAULT_STATS);
+    const empty = resetUserStats();
+    setStats(empty);
+    setReviews(new Map());
   };
 
   return (
@@ -140,6 +203,9 @@ export const App: React.FC = () => {
             onStartMode={handleStartMode}
             onNavigate={handleNavigate}
             stats={stats}
+            recommendations={adaptiveRecommendations}
+            dueReviews={dueReviews}
+            onCompleteReview={handleCompleteReview}
           />
         )}
 
@@ -156,6 +222,7 @@ export const App: React.FC = () => {
             aiService={aiService}
             settings={settings}
             onOpenNewProblem={() => setIsNewProblemOpen(true)}
+            onStatsUpdate={refreshStats}
           />
         )}
 
@@ -169,7 +236,12 @@ export const App: React.FC = () => {
         {currentView === 'progress' && (
           <ProgressPage
             stats={stats}
+            totalConcepts={concepts.length}
             onNavigateToTopic={(mode, pId, cId) => handleStartMode(mode, pId, cId)}
+            recommendations={adaptiveRecommendations}
+            reviews={reviews}
+            allProblems={problems}
+            onCompleteReview={handleCompleteReview}
           />
         )}
       </main>

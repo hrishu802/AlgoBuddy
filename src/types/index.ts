@@ -145,6 +145,54 @@ export interface MentorSession {
   completed?: boolean;
 }
 
+export type LearningEventType =
+  | 'problem_opened'
+  | 'hint_requested'
+  | 'stage_advanced'
+  | 'code_analyzed'
+  | 'problem_completed'
+  | 'problem_uncompleted'
+  | 'concept_studied'
+  | 'quiz_attempted';
+
+export type CompletionVerification = 'self_reported' | 'unverified';
+
+export interface ProblemCompletionRecord {
+  problemId: string;
+  completedAt: string;
+  highestHintLevel: HintLevel | null | undefined;
+  selfReported: boolean;
+  verification?: CompletionVerification;
+}
+
+export interface LearningEvent {
+  id: string;
+  type: LearningEventType;
+  targetId: string;
+  targetType: 'problem' | 'concept' | 'code';
+  timestamp: string; // ISO string
+  metadata?: {
+    hintLevel?: HintLevel;
+    stage?: PedagogyStage;
+    quizCorrect?: boolean;
+    highestHintLevel?: HintLevel | null;
+    selfReported?: boolean;
+    verification?: CompletionVerification;
+    language?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface TopicWeaknessReport {
+  topic: string;
+  status: 'Needs Practice' | 'Developing' | 'Proficient' | 'Insufficient Data';
+  sessionCount: number;
+  hintHeavyCount: number;
+  reason: string;
+  urgency: 'High' | 'Medium' | 'Low' | 'None';
+  lastUpdated?: string;
+}
+
 export interface UserStats {
   problemsPracticed: number;
   conceptsReviewed: number;
@@ -169,6 +217,16 @@ export interface UserStats {
     reason: string;
     mode: AppMode;
   }[];
+  hintReliance?: {
+    averageLevel: number | null;
+    evaluatedSessions: number;
+    label: string;
+  };
+  difficultyBreakdown?: {
+    easy: number;
+    medium: number;
+    hard: number;
+  };
 }
 
 export type AIProvider = 'gemma' | 'mock' | 'gemini';
@@ -183,4 +241,28 @@ export interface AISettings {
   geminiApiKey?: string;
   model?: string;
   mentorStrictness: 'strict' | 'balanced' | 'exploratory';
+}
+
+export type RecommendationCategory = 'weak_topic' | 'concept_bridge' | 'review' | 'practice';
+
+export interface ProblemRecommendation {
+  problemId: string;
+  problem: Problem;
+  category: RecommendationCategory;
+  reason: string;
+  evidence: string;
+  priority: number;
+  topic?: string;
+  conceptId?: string;
+}
+
+export interface SpacedReviewRecord {
+  problemId: string;
+  completionDate: string;
+  stage: number;
+  intervalDays: number;
+  nextReviewDate: string | null;
+  lastReviewedDate?: string;
+  reviewCount: number;
+  reviewDateUnavailable?: boolean;
 }

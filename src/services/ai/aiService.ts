@@ -419,23 +419,27 @@ export class MockAIService implements AIService {
     await this.delay(650);
 
     const trimmed = code.trim();
-    const hasNestedLoop = /for[\s\S]+for|while[\s\S]+while|for[\s\S]+while/g.test(trimmed);
-    const hasHash = /set\(|dict\(|\{\}|HashMap|HashSet|new Map|new Set/g.test(trimmed);
-    const hasRecursion = /def (\w+)[\s\S]+\1\(/g.test(trimmed);
+    const hasNestedLoop = /for[\s\S]+for|while[\s\S]+while|for[\s\S]+while/.test(trimmed);
+    const hasHash = /set\(|dict\(|\{\}|HashMap|HashSet|new Map|new Set/.test(trimmed);
+    const hasRecursion = /def\s+(\w+)[\s\S]+\b\1\s*\(/.test(trimmed);
 
     let timeComplexity = 'O(N)';
     let spaceComplexity = 'O(1)';
     let bottlenecks: string[] = [];
     let detectedPattern = 'Linear Scan';
     let correctness: CodeAnalysis['correctness'] = 'Looks Correct';
-    let correctnessNote = 'The code logic appears sound for primary test cases.';
+    let correctnessNote = problemContext
+      ? `Code evaluated against ${problemContext.split('\n')[0].replace('Problem: ', '')}. Logic appears sound for primary test cases.`
+      : 'The code logic appears sound for primary test cases.';
 
     if (hasNestedLoop) {
       timeComplexity = 'O(N^2)';
       bottlenecks.push('Nested loop scanning the collection repeatedly, causing quadratic runtime.');
       bottlenecks.push('Inner iteration duplicates comparisons previously checked.');
       detectedPattern = 'Brute Force Exhaustive Enumeration';
-      correctnessNote = 'May trigger Time Limit Exceeded (TLE) when N >= 10^4.';
+      correctnessNote = problemContext
+        ? `Quadratic solution flagged for ${problemContext.split('\n')[0].replace('Problem: ', '')}. May trigger Time Limit Exceeded (TLE).`
+        : 'May trigger Time Limit Exceeded (TLE) when N >= 10^4.';
     } else if (hasHash) {
       timeComplexity = 'O(N)';
       spaceComplexity = 'O(N)';

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Concept, ConceptStatus } from '../types';
+import { Concept, ConceptStatus, Problem } from '../types';
+import { recordLearningEvent } from '../services/storage';
+import { getConceptProblemBridge } from '../services/recommendations';
 import { 
   ChevronDown, 
   Search, 
@@ -10,7 +12,8 @@ import {
   CheckCircle2, 
   XCircle,
   Lightbulb,
-  Radar
+  Radar,
+  ArrowRight
 } from 'lucide-react';
 
 interface ConceptContextProps {
@@ -18,6 +21,8 @@ interface ConceptContextProps {
   allConcepts: Concept[];
   onSelectConcept: (concept: Concept) => void;
   onUpdateStatus?: (conceptId: string, status: ConceptStatus) => void;
+  allProblems?: Problem[];
+  onSelectProblem?: (problem: Problem) => void;
 }
 
 export const ConceptContext: React.FC<ConceptContextProps> = ({
@@ -25,6 +30,8 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
   allConcepts,
   onSelectConcept,
   onUpdateStatus,
+  allProblems = [],
+  onSelectProblem,
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -33,6 +40,8 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
   // Interactive Quiz state
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [submittedQuiz, setSubmittedQuiz] = useState(false);
+
+  const bridgeProblem = getConceptProblemBridge(currentConcept.id, allProblems);
 
   const filteredConcepts = allConcepts.filter(c =>
     c.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
@@ -48,7 +57,17 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
   const handleCheckQuiz = () => {
     if (selectedOption !== null) {
       setSubmittedQuiz(true);
-      if (selectedOption === currentConcept.practiceQuestion.answerIndex && onUpdateStatus) {
+      const isCorrect = selectedOption === currentConcept.practiceQuestion.answerIndex;
+      recordLearningEvent({
+        type: 'quiz_attempted',
+        targetId: currentConcept.id,
+        targetType: 'concept',
+        metadata: {
+          quizCorrect: isCorrect,
+          selectedOption
+        }
+      });
+      if (isCorrect && onUpdateStatus) {
         onUpdateStatus(currentConcept.id, 'Mastered');
       }
     }
@@ -227,6 +246,34 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
               <span className="font-semibold text-slate-400 uppercase text-[10px]">Category:</span>
               <p className="text-slate-300">{currentConcept.category} • {currentConcept.shortDescription}</p>
             </div>
+
+            {bridgeProblem && (
+              <div className="p-3.5 rounded-xl bg-indigo-950/20 border border-indigo-800/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">
+                    Concept Practice Bridge
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    {bridgeProblem.difficulty}
+                  </span>
+                </div>
+                <div className="text-xs font-semibold text-white">
+                  {bridgeProblem.title}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Apply {currentConcept.name} algorithmic patterns to an actual LeetCode-style problem.
+                </p>
+                {onSelectProblem && (
+                  <button
+                    onClick={() => onSelectProblem(bridgeProblem)}
+                    className="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <span>Practice in Problem Mode</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -392,6 +439,36 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
                   >
                     Try Question Again
                   </button>
+
+                  {bridgeProblem && (
+                    <div className="p-3.5 rounded-xl bg-indigo-950/20 border border-indigo-800/40 space-y-2 mt-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">
+                          Recommended Practice Problem
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                          {bridgeProblem.difficulty}
+                        </span>
+                      </div>
+                      <div className="text-xs font-semibold text-white">
+                        {bridgeProblem.title}
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        {selectedOption === currentConcept.practiceQuestion.answerIndex
+                          ? "Great job on the quiz checkpoint! Solidify your mastery by implementing the full algorithm hands-on (checkpoint recall alone does not equate to complete mastery)."
+                          : "Reinforce what you've learned through hands-on implementation to address any conceptual gaps."}
+                      </p>
+                      {onSelectProblem && (
+                        <button
+                          onClick={() => onSelectProblem(bridgeProblem)}
+                          className="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <span>Solve {bridgeProblem.title}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

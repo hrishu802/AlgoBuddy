@@ -15,6 +15,7 @@ import {
   KeyRound,
   Compass
 } from 'lucide-react';
+import { SafeMarkdown } from './SafeMarkdown';
 
 interface MentorChatProps {
   messages: ChatMessage[];
@@ -157,10 +158,11 @@ export const MentorChat: React.FC<MentorChatProps> = ({
                   </div>
                 )}
 
-                {/* Content */}
-                <div className="whitespace-pre-line space-y-1 font-sans">
-                  {msg.content}
-                </div>
+                {/* Safe Markdown Content */}
+                <SafeMarkdown
+                  content={msg.content}
+                  className={isUser ? 'text-white' : 'text-slate-200'}
+                />
 
                 {/* Optional Embedded Code Snippet */}
                 {msg.codeSnippet && (

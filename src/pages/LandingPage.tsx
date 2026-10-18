@@ -1,5 +1,4 @@
-import React from 'react';
-import { AppMode, AppView, UserStats } from '../types';
+import { AppMode, AppView, UserStats, Problem, ProblemRecommendation, SpacedReviewRecord } from '../types';
 import { PROBLEMS } from '../data/problems';
 import { CONCEPTS } from '../data/concepts';
 import { 
@@ -16,19 +15,27 @@ import {
   Boxes, 
   Zap, 
   Layers,
-  ChevronRight
+  ChevronRight,
+  CalendarClock,
+  RotateCcw
 } from 'lucide-react';
 
 interface LandingPageProps {
   onStartMode: (mode: AppMode, problemId?: string, conceptId?: string) => void;
   onNavigate: (view: AppView, mode?: AppMode) => void;
   stats: UserStats;
+  recommendations?: ProblemRecommendation[];
+  dueReviews?: { problem: Problem; review: SpacedReviewRecord; daysOverdue: number }[];
+  onCompleteReview?: (problemId: string) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onStartMode,
   onNavigate,
   stats,
+  recommendations = [],
+  dueReviews = [],
+  onCompleteReview,
 }) => {
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
@@ -255,32 +262,181 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </button>
           </div>
 
-          {/* Quick Problem Launch Cards */}
+          {/* Due for Spaced Review Section */}
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Recommended Next Practice
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {stats.recommendedNext.map((rec, i) => (
-                <div
-                  key={i}
-                  onClick={() => onStartMode(rec.mode, rec.id, rec.id)}
-                  className="bg-slate-900/60 border border-slate-800 hover:border-slate-700 p-3.5 rounded-xl cursor-pointer transition-all hover:bg-slate-900 group"
-                >
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-semibold text-slate-200 group-hover:text-indigo-300 transition-colors">
-                      {rec.name}
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950/60 border border-indigo-900 text-indigo-300 font-mono">
-                      {rec.tag}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
-                    {rec.reason}
-                  </p>
-                </div>
-              ))}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-amber-400" />
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Due for Spaced Review
+                </h4>
+              </div>
+              <span className="text-[11px] text-slate-500">
+                {dueReviews && dueReviews.length > 0 
+                  ? `${dueReviews.length} problem${dueReviews.length === 1 ? '' : 's'} ready for review` 
+                  : '1, 3, 7, 14, 30 day intervals'}
+              </span>
             </div>
+
+            {(!dueReviews || dueReviews.length === 0) ? (
+              <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 text-xs text-slate-400 text-center space-y-1">
+                <p className="text-slate-300 font-medium">No reviews due right now.</p>
+                <p className="text-slate-500 text-[11px]">
+                  Completed problems automatically enter the spaced review schedule (1d → 3d → 7d → 14d → 30d) to combat retention decay.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {dueReviews.map(({ problem, review, daysOverdue }) => (
+                  <div
+                    key={problem.id}
+                    className="bg-slate-900/60 border border-amber-500/30 hover:border-amber-500/60 p-4 rounded-xl transition-all space-y-3 flex flex-col justify-between"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <span className="font-semibold text-slate-100 truncate">
+                          {problem.title}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium shrink-0 bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                          {review.intervalDays}d review
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] ${
+                          problem.difficulty === 'Easy' ? 'text-emerald-400 bg-emerald-500/10' :
+                          problem.difficulty === 'Medium' ? 'text-amber-400 bg-amber-500/10' :
+                          'text-rose-400 bg-rose-500/10'
+                        }`}>
+                          {problem.difficulty}
+                        </span>
+                        <span>•</span>
+                        <span className="text-amber-400 font-medium">
+                          {daysOverdue > 0 ? `${daysOverdue} day${daysOverdue === 1 ? '' : 's'} overdue` : 'Due today'}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Stage {review.stage + 1} review interval reached. Revisit the pattern without hints.
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                      <button
+                        onClick={() => onStartMode('problem', problem.id)}
+                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Review</span>
+                      </button>
+                      {onCompleteReview && (
+                        <button
+                          onClick={() => onCompleteReview(problem.id)}
+                          title="Explicitly confirm completion of this spaced review (self-reported)"
+                          className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                        >
+                          Mark Done
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recommended Next Practice Cards */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Recommended Next Practice
+                </h4>
+              </div>
+              <span className="text-[11px] text-slate-500">
+                Ranked by weakness & study evidence
+              </span>
+            </div>
+
+            {recommendations.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {recommendations.map((rec) => {
+                  const categoryBadge = 
+                    rec.category === 'weak_topic' ? { label: 'Needs Practice', style: 'bg-rose-500/10 text-rose-300 border-rose-500/20' } :
+                    rec.category === 'concept_bridge' ? { label: 'Concept Bridge', style: 'bg-purple-500/10 text-purple-300 border-purple-500/20' } :
+                    rec.category === 'review' ? { label: 'Spaced Review', style: 'bg-amber-500/10 text-amber-300 border-amber-500/20' } :
+                    { label: 'General Practice', style: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' };
+
+                  return (
+                    <div
+                      key={rec.problemId}
+                      onClick={() => onStartMode('problem', rec.problemId)}
+                      className="bg-slate-900/60 border border-slate-800 hover:border-slate-700 p-4 rounded-xl cursor-pointer transition-all hover:bg-slate-900 group flex flex-col justify-between space-y-3"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs gap-2">
+                          <span className="font-semibold text-slate-200 group-hover:text-indigo-300 transition-colors truncate">
+                            {rec.problem.title}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono shrink-0 ${categoryBadge.style}`}>
+                            {categoryBadge.label}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-medium ${
+                            rec.problem.difficulty === 'Easy' ? 'text-emerald-400 bg-emerald-500/10' :
+                            rec.problem.difficulty === 'Medium' ? 'text-amber-400 bg-amber-500/10' :
+                            'text-rose-400 bg-rose-500/10'
+                          }`}>
+                            {rec.problem.difficulty}
+                          </span>
+                          <span>•</span>
+                          <span className="text-slate-400 truncate">
+                            {rec.topic || rec.problem.tags[0] || rec.problem.category}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-300 leading-snug line-clamp-2 pt-1">
+                          {rec.reason}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 leading-tight">
+                        Evidence: {rec.evidence}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : stats.recommendedNext.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {stats.recommendedNext.map((rec, i) => (
+                  <div
+                    key={i}
+                    onClick={() => onStartMode(rec.mode, rec.id, rec.id)}
+                    className="bg-slate-900/60 border border-slate-800 hover:border-slate-700 p-3.5 rounded-xl cursor-pointer transition-all hover:bg-slate-900 group"
+                  >
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="font-semibold text-slate-200 group-hover:text-indigo-300 transition-colors">
+                        {rec.name}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950/60 border border-indigo-900 text-indigo-300 font-mono">
+                        {rec.tag}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
+                      {rec.reason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 text-xs text-slate-400 text-center">
+                No recommended topics yet. Solve problems to receive personalized practice suggestions.
+              </div>
+            )}
           </div>
 
           {/* Recently Studied Timeline */}
@@ -288,21 +444,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Recent Activity
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {stats.recentlyStudied.map((item, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => onStartMode(item.type === 'problem' ? 'problem' : 'concept', item.id, item.id)}
-                  className="p-2.5 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:bg-slate-900 text-xs cursor-pointer transition-colors"
-                >
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-0.5">
-                    <span className="capitalize">{item.type}</span>
-                    <span>{item.date}</span>
+            {stats.recentlyStudied.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 text-xs text-slate-400 text-center">
+                No recent activity recorded. Launch Problem or Concept mode to begin!
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {stats.recentlyStudied.map((item, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => onStartMode(item.type === 'problem' ? 'problem' : 'concept', item.id, item.id)}
+                    className="p-2.5 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:bg-slate-900 text-xs cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-0.5">
+                      <span className="capitalize">{item.type}</span>
+                      <span>{item.date}</span>
+                    </div>
+                    <div className="font-medium text-slate-200 truncate">{item.name}</div>
                   </div>
-                  <div className="font-medium text-slate-200 truncate">{item.name}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>
