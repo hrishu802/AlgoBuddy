@@ -16,6 +16,7 @@ import {
 interface PedagogyStageBarProps {
   currentStage: PedagogyStage;
   onSelectStage: (stage: PedagogyStage) => void;
+  disabled?: boolean;
 }
 
 const STAGES: { id: PedagogyStage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -31,6 +32,7 @@ const STAGES: { id: PedagogyStage; label: string; icon: React.ComponentType<{ cl
 export const PedagogyStageBar: React.FC<PedagogyStageBarProps> = ({
   currentStage,
   onSelectStage,
+  disabled = false,
 }) => {
   const currentIndex = STAGES.findIndex(s => s.id === currentStage);
 
@@ -58,8 +60,10 @@ export const PedagogyStageBar: React.FC<PedagogyStageBarProps> = ({
             return (
               <React.Fragment key={stage.id}>
                 <button
-                  onClick={() => onSelectStage(stage.id)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all ${
+                  disabled={disabled}
+                  aria-label={`Step ${idx + 1}: ${stage.label}`}
+                  onClick={() => !disabled && onSelectStage(stage.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all disabled:opacity-50 disabled:pointer-events-none ${
                     isCurrent
                       ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50'
                       : isCompleted

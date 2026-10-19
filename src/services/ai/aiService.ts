@@ -1235,10 +1235,564 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
   }
 }
 
+// ==========================================
+// HOSTED GROQ AI SERVICE (Free Tier Meta Llama 3.3 70B, ₹0 Budget)
+// ==========================================
+export class GroqAIService implements AIService {
+  private settings?: AISettings;
+
+  constructor(settings?: AISettings) {
+    this.settings = settings;
+  }
+
+  // 1. Problem Mode: Start Socratic Session
+  async startProblemSession(problem: Problem): Promise<ChatMessage> {
+    try {
+      const systemPrompt = buildProblemStagePrompt(
+        problem.title,
+        problem.difficulty,
+        'constraints',
+        problem.constraints,
+        problem.bruteForce,
+        problem.optimalPattern,
+        problem.optimalComplexity
+      );
+      const prompt = `The user is beginning the problem: "${problem.title}".
+Difficulty: ${problem.difficulty}.
+Constraints:
+${problem.constraints.map(c => `- ${c}`).join('\n')}
+
+Description:
+${problem.description}
+
+Initiate Step 1 (Understand Constraints). Welcome them enthusiastically with our pedagogical motto: "Think first. Hint second. Solution last."
+Ask a targeted Socratic question about the input scale and allowable time complexity. Do NOT reveal the brute force or optimal pattern.`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt);
+      if (response.success && response.text) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'mentor',
+          stage: 'constraints',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: response.text,
+          suggestedActions: [
+            'What time complexity fits these constraints?',
+            'What is the straightforward brute force approach?',
+            'Give me a subtle nudge on constraints'
+          ]
+        };
+      }
+      return this.formatConfigurationError('constraints', response.error || 'Unknown error communicating with Groq backend.');
+    } catch (err: unknown) {
+      return this.formatConfigurationError('constraints', err);
+    }
+  }
+
+  // 1. Problem Mode: Socratic Dialogue
+  async askProblemQuestion(
+    problem: Problem,
+    stage: PedagogyStage,
+    userMessage: string,
+    history: ChatMessage[]
+  ): Promise<ChatMessage> {
+    try {
+      const systemPrompt = buildProblemStagePrompt(
+        problem.title,
+        problem.difficulty,
+        stage,
+        problem.constraints,
+        problem.bruteForce,
+        problem.optimalPattern,
+        problem.optimalComplexity
+      );
+      const prompt = `CURRENT STAGE: ${stage.toUpperCase()}
+USER QUERY / OBSERVATION: "${userMessage}"
+
+Respond as the mentor adhering strictly to "Think first. Hint second. Solution last."
+If they ask for brute force, discuss the brute force baseline (${problem.bruteForce.approach}, ${problem.bruteForce.time}).
+If they ask for pattern, guide them toward ${problem.optimalPattern}.
+Do NOT reveal the complete code solution unless the stage is 'solution' or they explicitly request it.`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt, history);
+      if (response.success && response.text) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'mentor',
+          stage,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: response.text,
+          suggestedActions: [
+            'Give me a hint',
+            'What is the optimal pattern?',
+            'Advance to next stage'
+          ]
+        };
+      }
+      return this.formatConfigurationError(stage, response.error || 'Failed to receive inference response from Groq.');
+    } catch (err: unknown) {
+      return this.formatConfigurationError(stage, err);
+    }
+  }
+
+  // 1. Problem Mode: Progressive Hints
+  async requestHint(
+    problem: Problem,
+    level: HintLevel,
+    currentStage: PedagogyStage
+  ): Promise<ChatMessage> {
+    try {
+      const systemPrompt = buildProblemStagePrompt(
+        problem.title,
+        problem.difficulty,
+        currentStage,
+        problem.constraints,
+        problem.bruteForce,
+        problem.optimalPattern,
+        problem.optimalComplexity
+      );
+      const prompt = `The user requested a hint at level: "${level.toUpperCase()}".
+Reference hint guidelines:
+- Nudge: ${problem.hints.nudge}
+- Moderate Hint: ${problem.hints.hint}
+- Strong Hint: ${problem.hints.strongHint}
+- Explain Approach: ${problem.hints.explain}
+- Full Solution: ${problem.hints.solution.code} (${problem.hints.solution.explanation})
+
+Provide the requested hint adhering to our Socratic rhythm: "Think first. Hint second. Solution last."
+Ensure they are challenged to take the next step themselves without surrendering the full code unless level is 'solution'.`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt);
+      if (response.success && response.text) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'mentor',
+          stage: currentStage,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: response.text,
+          suggestedActions: [
+            level !== 'strong_hint' && level !== 'solution' ? 'Give me a stronger hint' : 'Explain the optimal approach',
+            'What data structure helps here?',
+            'Advance to next stage'
+          ]
+        };
+      }
+      return this.formatConfigurationError(currentStage, response.error || 'Failed to generate hint from Groq.');
+    } catch (err: unknown) {
+      return this.formatConfigurationError(currentStage, err);
+    }
+  }
+
+  // 1. Problem Mode: Explicit Stage Advancement
+  async advancePedagogyStage(
+    problem: Problem,
+    targetStage: PedagogyStage
+  ): Promise<ChatMessage> {
+    try {
+      const systemPrompt = buildProblemStagePrompt(
+        problem.title,
+        problem.difficulty,
+        targetStage,
+        problem.constraints,
+        problem.bruteForce,
+        problem.optimalPattern,
+        problem.optimalComplexity
+      );
+      const prompt = `The user has advanced to stage: "${targetStage.toUpperCase()}".
+Welcome them to this new stage. Summarize what we have confirmed so far and ask the guiding Socratic question for this stage according to our "Think first. Hint second. Solution last." philosophy.`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt);
+      if (response.success && response.text) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'mentor',
+          stage: targetStage,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: response.text,
+          suggestedActions: [
+            'What is the next step?',
+            'Give me a nudge',
+            'What edge cases apply here?'
+          ]
+        };
+      }
+      return this.formatConfigurationError(targetStage, response.error || `Failed to advance to ${targetStage} via Groq.`);
+    } catch (err: unknown) {
+      return this.formatConfigurationError(targetStage, err);
+    }
+  }
+
+  // 2. Concept Mode: Socratic Explanations
+  async explainConcept(
+    concept: Concept,
+    query?: string
+  ): Promise<ChatMessage> {
+    try {
+      const systemPrompt = buildConceptExplanationPrompt(
+        concept.name,
+        concept.whatItIs,
+        concept.whenToRecognize,
+        concept.commonPatterns,
+        concept.commonMistakes,
+        concept.complexityTradeoffs.time,
+        concept.complexityTradeoffs.space,
+        query
+      );
+      const prompt = query
+        ? `USER QUESTION ABOUT ${concept.name.toUpperCase()}: "${query}".
+Explain Socratically using real-world analogies, pattern recognition rules, and algorithmic tradeoffs.`
+        : `Provide an intuitive, Socratic overview of ${concept.name}.
+Cover:
+1. Core Mental Model & Intuition (with a memorable analogy)
+2. Recognition Signals (When to reach for it in interviews)
+3. Common Traps & Pitfalls
+4. A quick comprehension check question for the user to test their understanding.`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt);
+      if (response.success && response.text) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'mentor',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: response.text,
+          suggestedActions: [
+            `What is a typical interview problem using ${concept.name}?`,
+            `What are common edge cases with ${concept.name}?`,
+            'Test my understanding with another question'
+          ]
+        };
+      }
+      return this.formatConfigurationError('pattern', response.error || 'Failed to generate concept explanation from Groq.');
+    } catch (err: unknown) {
+      return this.formatConfigurationError('pattern', err);
+    }
+  }
+
+  // 3. Code Mode: Socratic Analysis
+  async analyzeCode(
+    code: string,
+    language: string,
+    problemContext?: string
+  ): Promise<CodeAnalysis> {
+    try {
+      const systemPrompt = buildCodeAnalysisPrompt(code, language, problemContext);
+      const prompt = `Analyze the student's code according to our Socratic principles.
+Return your evaluation in raw valid JSON format matching this schema:
+{
+  "correctness": "Looks Correct" | "Logical Flaw" | "Edge Case Issue" | "TLE Likely",
+  "correctnessNote": "Socratic feedback on correctness (1-2 sentences)",
+  "timeComplexity": "O(...)",
+  "spaceComplexity": "O(...)",
+  "detectedPattern": "Name of algorithmic pattern used",
+  "bottlenecks": ["Specific bottleneck 1", "Specific bottleneck 2"],
+  "optimizationOpportunities": ["Specific optimization 1"],
+  "edgeCasesHandled": ["Handled edge case 1"],
+  "edgeCasesMissed": ["Missed edge case 1"],
+  "socraticQuestions": ["Question 1 guiding them to fix or optimize", "Question 2"]
+}`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt);
+      if (response.success && response.text) {
+        try {
+          const cleaned = response.text
+            .replace(/```json/gi, '')
+            .replace(/```/g, '')
+            .trim();
+          const parsed = JSON.parse(cleaned);
+          return {
+            correctness: parsed.correctness || 'Pending',
+            correctnessNote: parsed.correctnessNote || 'Analysis completed via Groq Cloud.',
+            timeComplexity: parsed.timeComplexity || 'O(N)',
+            spaceComplexity: parsed.spaceComplexity || 'O(1)',
+            detectedPattern: parsed.detectedPattern || 'Identified approach',
+            bottlenecks: parsed.bottlenecks || [],
+            optimizationOpportunities: parsed.optimizationOpportunities || [],
+            progressiveHints: {
+              nudge: 'Review your inner loop bounds and operations.',
+              hint: 'Consider whether an auxiliary hash map or frequency array could store state.',
+              strongHint: 'Check constraints to see if you can achieve linear time.',
+              explain: 'Examine whether duplicate work is being recalculated across iterations.'
+            }
+          };
+        } catch {
+          return {
+            correctness: 'Pending',
+            correctnessNote: response.text.slice(0, 300),
+            timeComplexity: 'Estimated',
+            spaceComplexity: 'Estimated',
+            detectedPattern: 'Custom implementation',
+            bottlenecks: ['Inspect runtime with large test cases'],
+            optimizationOpportunities: ['Review data structure operations'],
+            progressiveHints: {
+              nudge: 'Check your loop termination conditions.',
+              hint: 'Consider edge cases like empty arrays or duplicate elements.',
+              strongHint: 'Trace through the algorithm with a small input.',
+              explain: 'Analyze the step-by-step behavior.'
+            }
+          };
+        }
+      }
+      throw new Error(response.error || 'Failed to analyze code via Groq.');
+    } catch (err: unknown) {
+      const is401 = err instanceof Error && err.message.includes('401');
+      const is429 = err instanceof Error && err.message.includes('429');
+      return {
+        correctness: 'Pending',
+        correctnessNote: is401
+          ? 'Groq API Key is unconfigured or invalid. Add GROQ_API_KEY in server .env or Settings.'
+          : is429
+          ? 'Groq free-tier rate limit reached (HTTP 429). Please wait a moment before retrying.'
+          : 'Code review pending configuration or network connectivity.',
+        timeComplexity: 'Pending',
+        spaceComplexity: 'Pending',
+        detectedPattern: 'Pending',
+        bottlenecks: [is401 ? 'Groq API Key required' : 'Inference unavailable'],
+        optimizationOpportunities: ['Configure provider in Settings (⚙️) or switch to Socratic Mock'],
+        progressiveHints: {
+          nudge: `Configure your GROQ_API_KEY in Settings or server .env to analyze this code.`,
+          hint: 'Configure API key in Settings or switch to Socratic Mock.',
+          strongHint: 'Configure API key in Settings or switch to Socratic Mock.',
+          explain: 'Configure API key in Settings or switch to Socratic Mock.'
+        }
+      };
+    }
+  }
+
+  // 3. Code Mode: Socratic Code Dialogue
+  async askCodeQuestion(
+    code: string,
+    analysis: CodeAnalysis,
+    userMessage: string,
+    history: ChatMessage[]
+  ): Promise<ChatMessage> {
+    try {
+      const systemPrompt = `${ALGOBUDDY_SYSTEM_PROMPT}
+
+CODE UNDER ANALYSIS:
+\`\`\`
+${code}
+\`\`\`
+ANALYSIS:
+- Time: ${analysis.timeComplexity}
+- Space: ${analysis.spaceComplexity}
+- Pattern: ${analysis.detectedPattern}
+- Bottlenecks: ${analysis.bottlenecks.join(' | ')}
+- Optimizations: ${analysis.optimizationOpportunities.join(' | ')}`;
+
+      const prompt = `USER QUESTION: "${userMessage}".
+Guide the user Socratically on how to address bottlenecks and optimize their code according to "Think first. Hint second. Solution last."`;
+
+      const response = await this.callGroqBackend(systemPrompt, prompt, history);
+      if (response.success && response.text) {
+        return {
+          id: `msg-${Date.now()}`,
+          sender: 'mentor',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          content: response.text,
+          suggestedActions: [
+            'How can I optimize the space complexity?',
+            'Show progressive hint',
+            'Show optimized reference solution'
+          ]
+        };
+      }
+      return this.formatConfigurationError('optimize', response.error || 'Failed to receive code consultation from Groq.');
+    } catch (err: unknown) {
+      return this.formatConfigurationError('optimize', err);
+    }
+  }
+
+  private formatConfigurationError(stage: PedagogyStage, err: unknown): ChatMessage {
+    const model = this.settings?.groqModel || this.settings?.model || 'llama-3.3-70b-versatile';
+
+    let statusCode = 400;
+    let errorCategory: string = 'bad_request';
+    let errorMessage = '';
+
+    if (err instanceof GemmaInferenceError) {
+      statusCode = err.statusCode;
+      errorCategory = err.errorCategory;
+      errorMessage = err.message;
+    } else if (err instanceof Error) {
+      errorMessage = err.message;
+      if (errorMessage.includes('401')) {
+        statusCode = 401;
+        errorCategory = 'authentication';
+      } else if (errorMessage.includes('429')) {
+        statusCode = 429;
+        errorCategory = 'rate_limit';
+      } else if (errorMessage.includes('403')) {
+        statusCode = 403;
+        errorCategory = 'permission';
+      } else if (/5\d\d/.test(errorMessage)) {
+        statusCode = 500;
+        errorCategory = 'provider_down';
+      }
+    } else {
+      errorMessage = String(err);
+    }
+
+    let title = 'Groq Hosted AI Inference Error';
+    let categoryBadge = 'Configuration / Request Issue';
+    let explanation = '';
+    let resolutionSteps: string[] = [];
+    const suggestedActions = ['Retry Request', 'Switch to Socratic Mock', 'Open Settings (⚙️)'];
+
+    if (errorCategory === 'authentication' || statusCode === 401) {
+      title = 'Groq Authentication Required (HTTP 401)';
+      categoryBadge = 'API Key Required';
+      explanation = `Groq Cloud rejected the inference request because the API key is missing or invalid.\n\n` +
+        `**Zero Cost Free Tier:** Groq provides free access to \`${model}\` with a strict ₹0 inference budget.`;
+      resolutionSteps = [
+        `Get a free Groq API key at [Groq Console](https://console.groq.com/keys) (no credit card required).`,
+        `Add it to your project root \`.env\` file:\n   \`\`\`bash\n   GROQ_API_KEY=gsk_your_free_key_here\n   AI_PROVIDER=groq\n   \`\`\``,
+        `Or enter your key in **Settings (⚙️)**.`,
+        `Switch to **Socratic Mock (Dev Fallback)** for instant offline practice without any key.`
+      ];
+    } else if (errorCategory === 'rate_limit' || statusCode === 429) {
+      title = 'Groq Free-Tier Rate Limit Reached (HTTP 429)';
+      categoryBadge = 'Rate Limit / Quota Window';
+      explanation = `Groq's free tier allows up to 30 requests per minute (RPM). You have temporarily reached this threshold.\n\n` +
+        `**Strict ₹0 Budget Protection:** AlgoBuddy does NOT automatically retry or trigger paid billing on 429 errors.`;
+      resolutionSteps = [
+        `Wait 10–20 seconds for the rate-limit window to reset, then click **"Retry Request"**.`,
+        `Check your usage on the [Groq Console Dashboard](https://console.groq.com).`,
+        `Switch to **Socratic Mock (Dev Fallback)** for uninterrupted, zero-rate-limit practice.`
+      ];
+    } else if (errorCategory === 'network' || statusCode === 503 || statusCode === 504) {
+      title = 'Groq Connection Failure (Network / Timeout)';
+      categoryBadge = 'Connection Timeout';
+      explanation = `AlgoBuddy could not reach the Groq inference endpoint.`;
+      resolutionSteps = [
+        `Check your local internet connection.`,
+        `Click **"Retry Request"** to reconnect.`,
+        `Switch to **Socratic Mock (Dev Fallback)** for offline operation.`
+      ];
+    } else if (errorCategory === 'provider_down' || statusCode >= 500) {
+      title = `Groq Upstream Service Error (HTTP ${statusCode})`;
+      categoryBadge = 'Upstream Provider Issue';
+      explanation = `Groq Cloud is experiencing temporary service degradation or high traffic.`;
+      resolutionSteps = [
+        `Wait a moment and click **"Retry Request"**.`,
+        `Check [Groq Status](https://status.groq.com) for service updates.`,
+        `Switch to **Socratic Mock (Dev Fallback)** to keep practicing without interruption.`
+      ];
+    } else {
+      title = `Groq Request Issue (HTTP ${statusCode})`;
+      categoryBadge = 'Invalid Request';
+      explanation = `The request could not be processed by Groq: ${errorMessage}`;
+      resolutionSteps = [
+        `Click **"Retry Request"**.`,
+        `Verify model settings in **Settings (⚙️)** (supported free models: \`llama-3.3-70b-versatile\`, \`llama-3.1-8b-instant\`).`,
+        `Switch to **Socratic Mock (Dev Fallback)** in Settings.`
+      ];
+    }
+
+    const content = `⚠️ **${title}**\n\n` +
+      `*Status: ${categoryBadge} • Code: ${statusCode}*\n\n` +
+      `${explanation}\n\n` +
+      `**Provider Error Message:**\n> ${errorMessage}\n\n` +
+      `**How to resolve:**\n` +
+      resolutionSteps.map((step, idx) => `${idx + 1}. ${step}`).join('\n');
+
+    return {
+      id: `err-${Date.now()}`,
+      sender: 'mentor',
+      stage,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      content,
+      suggestedActions
+    };
+  }
+
+  private async callGroqBackend(
+    systemPrompt: string,
+    prompt: string,
+    history?: ChatMessage[]
+  ): Promise<{
+    success: boolean;
+    text?: string;
+    error?: string;
+    statusCode?: number;
+    errorCategory?: 'billing' | 'authentication' | 'permission' | 'rate_limit' | 'provider_down' | 'network' | 'bad_request';
+    details?: string;
+  }> {
+    const messages = history ? history.slice(-6).map(m => ({
+      role: m.sender === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.content
+    })) : [];
+    messages.push({ role: 'user' as const, content: prompt });
+
+    const payload = {
+      action: 'chat',
+      systemPrompt,
+      messages,
+      temperature: 0.3,
+      provider: 'groq' as const,
+      model: this.settings?.groqModel || this.settings?.model || 'llama-3.3-70b-versatile',
+      apiKey: this.settings?.groqApiKey,
+      endpoint: this.settings?.groqEndpoint
+    };
+
+    const apiEndpoint = typeof window !== 'undefined' ? '/api/gemma' : 'http://127.0.0.1:5173/api/gemma';
+    let res: Response;
+    try {
+      res = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (networkErr: unknown) {
+      const msg = networkErr instanceof Error ? networkErr.message : String(networkErr);
+      throw new GemmaInferenceError(`Network connection failure reaching AlgoBuddy server: ${msg}`, 503, 'network');
+    }
+
+    let data: {
+      success: boolean;
+      text?: string;
+      error?: string;
+      statusCode?: number;
+      errorCategory?: 'billing' | 'authentication' | 'permission' | 'rate_limit' | 'provider_down' | 'network' | 'bad_request';
+      details?: string;
+    };
+
+    try {
+      data = await res.json();
+    } catch {
+      throw new GemmaInferenceError(`Server returned HTTP ${res.status} with non-JSON response.`, res.status, 'provider_down');
+    }
+
+    if (!res.ok || !data.success) {
+      const statusCode = data.statusCode || res.status;
+      const category = data.errorCategory || (
+        statusCode === 402 ? 'billing' :
+        statusCode === 401 ? 'authentication' :
+        statusCode === 403 ? 'permission' :
+        statusCode === 429 ? 'rate_limit' :
+        statusCode >= 500 ? 'provider_down' : 'bad_request'
+      );
+      throw new GemmaInferenceError(
+        data.error || `HTTP ${statusCode}: Failed to reach Groq inference endpoint`,
+        statusCode,
+        category,
+        data.details
+      );
+    }
+
+    return data;
+  }
+}
+
 // Factory to retrieve active AIService based on user settings
-// Gemma (Hosted Open Model) is the PRIMARY AI service engine
+// Groq (Primary Free Hosted Open-Weights Model) and Gemma (HF Open Model) are supported
 export function getAIService(settings?: AISettings): AIService {
+  if (settings?.provider === 'groq') {
+    return new GroqAIService(settings);
+  }
   if (!settings || settings.provider === 'gemma') {
+    if (settings?.gemmaProvider === 'groq') {
+      return new GroqAIService(settings);
+    }
     return new GemmaAIService(settings);
   }
   if (settings.provider === 'gemini' && settings.geminiApiKey) {

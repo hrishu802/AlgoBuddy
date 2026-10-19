@@ -158,6 +158,7 @@ export const CodeContext: React.FC<CodeContextProps> = ({
           {/* Textarea */}
           <textarea
             value={userCode}
+            aria-label="DSA Code Editor"
             onChange={(e) => onCodeChange(e.target.value)}
             placeholder="// Paste your DSA code here to check correctness, complexity, and optimizations..."
             className="flex-1 p-3 bg-transparent text-slate-200 font-mono text-xs leading-5 resize-none focus:outline-none placeholder-slate-600 selection:bg-indigo-500/30"

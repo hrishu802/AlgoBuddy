@@ -229,8 +229,8 @@ export interface UserStats {
   };
 }
 
-export type AIProvider = 'gemma' | 'mock' | 'gemini';
-export type GemmaBackendProvider = 'huggingface' | 'openrouter' | 'ollama' | 'custom';
+export type AIProvider = 'groq' | 'gemma' | 'mock' | 'gemini';
+export type GemmaBackendProvider = 'groq' | 'huggingface' | 'openrouter' | 'ollama' | 'custom';
 
 export interface AISettings {
   provider: AIProvider;
@@ -238,6 +238,9 @@ export interface AISettings {
   gemmaModel?: string;
   gemmaApiKey?: string;
   gemmaEndpoint?: string;
+  groqApiKey?: string;
+  groqModel?: string;
+  groqEndpoint?: string;
   geminiApiKey?: string;
   model?: string;
   mentorStrictness: 'strict' | 'balanced' | 'exploratory';

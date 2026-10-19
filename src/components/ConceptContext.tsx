@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Concept, ConceptStatus, Problem } from '../types';
 import { recordLearningEvent } from '../services/storage';
 import { getConceptProblemBridge } from '../services/recommendations';
@@ -27,7 +27,7 @@ interface ConceptContextProps {
 
 export const ConceptContext: React.FC<ConceptContextProps> = ({
   currentConcept,
-  allConcepts,
+  allConcepts = [],
   onSelectConcept,
   onUpdateStatus,
   allProblems = [],
@@ -40,6 +40,12 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
   // Interactive Quiz state
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [submittedQuiz, setSubmittedQuiz] = useState(false);
+
+  // Reset interactive quiz when switching to a different concept
+  useEffect(() => {
+    setSelectedOption(null);
+    setSubmittedQuiz(false);
+  }, [currentConcept.id]);
 
   const bridgeProblem = getConceptProblemBridge(currentConcept.id, allProblems);
 
@@ -392,6 +398,8 @@ export const ConceptContext: React.FC<ConceptContextProps> = ({
                       key={idx}
                       onClick={() => handleOptionSelect(idx)}
                       disabled={submittedQuiz}
+                      aria-label={`Option ${String.fromCharCode(65 + idx)}: ${opt}`}
+                      aria-pressed={isSelected}
                       className={`w-full p-3 rounded-lg border text-left text-xs transition-colors flex items-start gap-2.5 ${optionStyle}`}
                     >
                       <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-[10px] font-mono shrink-0 mt-0.5">

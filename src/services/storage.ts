@@ -182,8 +182,8 @@ export function loadAISettings(): AISettings {
     if (data) {
       const parsed = JSON.parse(data);
       if (parsed && typeof parsed === 'object') {
-        // Migrate deprecated groq or gemma2-9b-it settings to hosted Hugging Face
-        if (parsed.gemmaProvider === 'groq' || parsed.gemmaModel === 'gemma2-9b-it' || !parsed.gemmaProvider) {
+        // Migrate legacy deprecated gemma2-9b-it settings to hosted Hugging Face
+        if (parsed.gemmaModel === 'gemma2-9b-it' || !parsed.gemmaProvider) {
           parsed.gemmaProvider = 'huggingface';
           parsed.gemmaModel = 'google/gemma-3-12b-it';
           parsed.gemmaEndpoint = 'https://router.huggingface.co/v1';

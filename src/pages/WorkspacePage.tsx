@@ -10,7 +10,7 @@ import {
   AISettings,
   ConceptStatus
 } from '../types';
-import { AIService } from '../services/ai/aiService';
+import { AIService, MockAIService } from '../services/ai/aiService';
 import { PedagogyStageBar } from '../components/PedagogyStageBar';
 import { HintControls } from '../components/HintControls';
 import { ProblemContext } from '../components/ProblemContext';
@@ -347,11 +347,11 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         );
         const updated = appendMessageConsolidated(nextHistory, response);
         setProblemMessages(updated);
-        persistProblemSession(updated);
         if (isErrorMessage(response)) {
           setLastFailedAction({ mode: 'problem', type: 'chat_problem', text });
           return false;
         } else {
+          persistProblemSession(updated);
           setLastFailedAction(null);
           return true;
         }
@@ -373,11 +373,11 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         const response = await aiService.explainConcept(currentConcept, text);
         const updated = appendMessageConsolidated(nextHistory, response);
         setConceptMessages(updated);
-        persistConceptSession(updated);
         if (isErrorMessage(response)) {
           setLastFailedAction({ mode: 'concept', type: 'chat_concept', text });
           return false;
         } else {
+          persistConceptSession(updated);
           setLastFailedAction(null);
           return true;
         }
@@ -400,11 +400,11 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           const response = await aiService.askCodeQuestion(userCode, codeAnalysis, text, nextHistory);
           const updated = appendMessageConsolidated(nextHistory, response);
           setCodeMessages(updated);
-          persistCodeSession(updated);
           if (isErrorMessage(response)) {
             setLastFailedAction({ mode: 'code', type: 'code_chat', text });
             return false;
           } else {
+            persistCodeSession(updated);
             setLastFailedAction(null);
             return true;
           }
@@ -414,11 +414,11 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           const response = await aiService.askCodeQuestion(userCode, analysis, text, nextHistory);
           const updated = appendMessageConsolidated(nextHistory, response);
           setCodeMessages(updated);
-          persistCodeSession(updated);
           if (isErrorMessage(response)) {
             setLastFailedAction({ mode: 'code', type: 'code_chat', text });
             return false;
           } else {
+            persistCodeSession(updated);
             setLastFailedAction(null);
             return true;
           }
@@ -474,32 +474,40 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         );
         const updated = appendMessageConsolidated(cleanHistory, response);
         setProblemMessages(updated);
-        persistProblemSession(updated);
-        if (!isErrorMessage(response)) setLastFailedAction(null);
+        if (!isErrorMessage(response)) {
+          persistProblemSession(updated);
+          setLastFailedAction(null);
+        }
       } else if (lastFailedAction?.type === 'chat_concept' && lastFailedAction.text) {
         const cleanHistory = conceptMessages.filter(m => !isErrorMessage(m));
         setConceptMessages(cleanHistory);
         const response = await aiService.explainConcept(currentConcept, lastFailedAction.text);
         const updated = appendMessageConsolidated(cleanHistory, response);
         setConceptMessages(updated);
-        persistConceptSession(updated);
-        if (!isErrorMessage(response)) setLastFailedAction(null);
+        if (!isErrorMessage(response)) {
+          persistConceptSession(updated);
+          setLastFailedAction(null);
+        }
       } else if (lastFailedAction?.type === 'hint' && lastFailedAction.hintLevel) {
         const cleanHistory = problemMessages.filter(m => !isErrorMessage(m));
         setProblemMessages(cleanHistory);
         const response = await aiService.requestHint(currentProblem, lastFailedAction.hintLevel, currentStage);
         const updated = appendMessageConsolidated(cleanHistory, response);
         setProblemMessages(updated);
-        persistProblemSession(updated, currentStage, lastFailedAction.hintLevel);
-        if (!isErrorMessage(response)) setLastFailedAction(null);
+        if (!isErrorMessage(response)) {
+          persistProblemSession(updated, currentStage, lastFailedAction.hintLevel);
+          setLastFailedAction(null);
+        }
       } else if (lastFailedAction?.type === 'stage' && lastFailedAction.stage) {
         const cleanHistory = problemMessages.filter(m => !isErrorMessage(m));
         setProblemMessages(cleanHistory);
         const response = await aiService.advancePedagogyStage(currentProblem, lastFailedAction.stage);
         const updated = appendMessageConsolidated(cleanHistory, response);
         setProblemMessages(updated);
-        persistProblemSession(updated, lastFailedAction.stage, highestHintLevel);
-        if (!isErrorMessage(response)) setLastFailedAction(null);
+        if (!isErrorMessage(response)) {
+          persistProblemSession(updated, lastFailedAction.stage, highestHintLevel);
+          setLastFailedAction(null);
+        }
       } else if (lastFailedAction?.type === 'code_analysis') {
         await handleTriggerAnalysis();
       } else {
@@ -529,7 +537,6 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
       onUpdateSettings?.(mockSettings);
 
       // Explicitly switch to Socratic Mock mentor without reloading
-      const { MockAIService } = await import('../services/ai/aiService');
       const mockService = new MockAIService();
       setIsLoading(true);
       try {
@@ -590,10 +597,10 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         : problemMessages;
       const updated = appendMessageConsolidated(cleanHistory, hintMsg);
       setProblemMessages(updated);
-      persistProblemSession(updated, currentStage, level);
       if (isErrorMessage(hintMsg)) {
         setLastFailedAction({ mode: 'problem', type: 'hint', hintLevel: level });
       } else {
+        persistProblemSession(updated, currentStage, level);
         setLastFailedAction(null);
       }
     } catch (e) {
@@ -624,10 +631,10 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
         : problemMessages;
       const updated = appendMessageConsolidated(cleanHistory, stageMsg);
       setProblemMessages(updated);
-      persistProblemSession(updated, stage, highestHintLevel);
       if (isErrorMessage(stageMsg)) {
         setLastFailedAction({ mode: 'problem', type: 'stage', stage });
       } else {
+        persistProblemSession(updated, stage, highestHintLevel);
         setLastFailedAction(null);
       }
     } catch (e) {
@@ -718,28 +725,41 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
   };
 
   // Reset Session
-  const handleResetSession = () => {
+  const handleResetSession = async () => {
     setLastFailedAction(null);
-    if (activeMode === 'problem') {
-      deleteSavedSession(`session-problem-${currentProblem.id}`);
-      aiService.startProblemSession(currentProblem).then(msg => {
+    setIsLoading(true);
+    try {
+      if (activeMode === 'problem') {
+        deleteSavedSession(`session-problem-${currentProblem.id}`);
+        const msg = await aiService.startProblemSession(currentProblem);
         const resetMsgs = [msg];
         setProblemMessages(resetMsgs);
         setCurrentStage('constraints');
         setHighestHintLevel(null);
-        persistProblemSession(resetMsgs, 'constraints', null, isProblemCompleted);
-      });
-    } else if (activeMode === 'concept') {
-      deleteSavedSession(`session-concept-${currentConcept.id}`);
-      aiService.explainConcept(currentConcept).then(msg => {
+        if (!isErrorMessage(msg)) {
+          persistProblemSession(resetMsgs, 'constraints', null, isProblemCompleted);
+        } else {
+          setLastFailedAction({ mode: 'problem', type: 'init_problem' });
+        }
+      } else if (activeMode === 'concept') {
+        deleteSavedSession(`session-concept-${currentConcept.id}`);
+        const msg = await aiService.explainConcept(currentConcept);
         const resetMsgs = [msg];
         setConceptMessages(resetMsgs);
-        persistConceptSession(resetMsgs);
-      });
-    } else {
-      deleteSavedSession(`session-code-${currentProblem.id}`);
-      setCodeMessages([]);
-      setCodeAnalysis(null);
+        if (!isErrorMessage(msg)) {
+          persistConceptSession(resetMsgs);
+        } else {
+          setLastFailedAction({ mode: 'concept', type: 'init_concept' });
+        }
+      } else {
+        deleteSavedSession(`session-code-${currentProblem.id}`);
+        setCodeMessages([]);
+        setCodeAnalysis(null);
+      }
+    } catch (err) {
+      console.error('Reset session failed:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -820,6 +840,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({
           <PedagogyStageBar
             currentStage={currentStage}
             onSelectStage={handleSelectStage}
+            disabled={isLoading}
           />
           <HintControls
             highestHintLevel={highestHintLevel}

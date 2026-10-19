@@ -33,12 +33,21 @@ export default defineConfig(({ mode }) => {
   // Populate server-side environment variables safely in process.env
   // These variables are NEVER given the VITE_ prefix to guarantee they are never bundled into client JS
   const serverKeys = [
+    'AI_PROVIDER',
+    'GROQ_API_KEY',
+    'GROQ_MODEL',
+    'GROQ_ENDPOINT',
     'HF_TOKEN',
     'HUGGINGFACE_API_KEY',
     'GEMMA_PROVIDER',
     'GEMMA_MODEL',
     'GEMMA_ENDPOINT',
-    'OPENROUTER_API_KEY'
+    'OPENROUTER_API_KEY',
+    'ALLOWED_ORIGINS',
+    'ALLOWED_ORIGIN',
+    'CORS_ORIGIN',
+    'RATE_LIMIT_MAX',
+    'RATE_LIMIT_WINDOW_MS'
   ];
   for (const key of serverKeys) {
     if (env[key]) {

@@ -138,8 +138,8 @@ export const MentorChat: React.FC<MentorChatProps> = ({
           const isUser = msg.sender === 'user';
           const isError = msg.id.startsWith('err-') ||
             msg.type === 'error' ||
-            msg.content.includes('Hosted Inference Error') ||
-            msg.content.includes('Credits Exhausted');
+            (msg.content?.includes('Hosted Inference Error') ?? false) ||
+            (msg.content?.includes('Credits Exhausted') ?? false);
           const hintBadge = getHintBadge(msg.hintLevel);
 
           return (
@@ -217,14 +217,16 @@ export const MentorChat: React.FC<MentorChatProps> = ({
                       {msg.suggestedActions.map((action, i) => (
                         <button
                           key={i}
+                          disabled={isLoading}
                           onClick={() => {
+                            if (isLoading) return;
                             if (onSelectActionChip) {
                               onSelectActionChip(action);
                             } else {
                               onSendMessage(action);
                             }
                           }}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-[11px] text-indigo-300 font-medium transition-colors text-left"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-[11px] text-indigo-300 font-medium transition-colors text-left disabled:opacity-50 disabled:pointer-events-none"
                         >
                           <span>{action}</span>
                           <ArrowRight className="w-3 h-3 opacity-60" />
@@ -275,8 +277,12 @@ export const MentorChat: React.FC<MentorChatProps> = ({
           {quickPrompts.map((prompt, idx) => (
             <button
               key={idx}
-              onClick={() => onSendMessage(prompt)}
-              className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 whitespace-nowrap transition-colors"
+              disabled={isLoading}
+              onClick={() => {
+                if (isLoading) return;
+                onSendMessage(prompt);
+              }}
+              className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 whitespace-nowrap transition-colors disabled:opacity-50 disabled:pointer-events-none"
             >
               {prompt}
             </button>
@@ -287,6 +293,7 @@ export const MentorChat: React.FC<MentorChatProps> = ({
         <div className="relative flex items-end gap-2 bg-[#05080e] border border-slate-700/80 rounded-xl p-2 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500/20 transition-all">
           <textarea
             ref={inputRef}
+            aria-label="Ask mentor a question"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}

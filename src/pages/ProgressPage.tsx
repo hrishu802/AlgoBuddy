@@ -202,7 +202,17 @@ export const ProgressPage: React.FC<ProgressPageProps> = ({
                     Evidence: Observed level 3+ hint requests in ≥ 50% of sessions.
                   </div>
                   <button
-                    onClick={() => onNavigateToTopic('problem')}
+                    onClick={() => {
+                      const topicLower = area.topic.toLowerCase();
+                      const matchingProblem = allProblems.find(p =>
+                        p.tags.some(t => t.toLowerCase().includes(topicLower) || topicLower.includes(t.toLowerCase())) ||
+                        p.category.toLowerCase().includes(topicLower) ||
+                        topicLower.includes(p.category.toLowerCase()) ||
+                        p.optimalPattern.toLowerCase().includes(topicLower) ||
+                        topicLower.includes(p.optimalPattern.toLowerCase())
+                      );
+                      onNavigateToTopic('problem', matchingProblem?.id);
+                    }}
                     className="w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-indigo-300 flex items-center justify-center gap-1.5 transition-colors"
                   >
                     <span>Target in Practice</span>

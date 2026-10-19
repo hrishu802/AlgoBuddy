@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { HintLevel } from '../types';
+import { hintLevelToDepth } from '../services/analytics';
 import { 
   Sprout, 
   Lightbulb, 
@@ -7,6 +8,7 @@ import {
   BookOpenCheck, 
   KeyRound, 
   AlertTriangle,
+  Check,
   X
 } from 'lucide-react';
 
@@ -103,7 +105,10 @@ export const HintControls: React.FC<HintControlsProps> = ({
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5">
           {HINT_TIERS.map(tier => {
             const Icon = tier.icon;
-            const isSolution = tier.level === 'solution';
+            const targetDepth = hintLevelToDepth(tier.level) ?? 0;
+            const currentDepth = hintLevelToDepth(highestHintLevel) ?? 0;
+            const isUnlocked = highestHintLevel !== null && targetDepth <= currentDepth;
+            const isCurrentHighest = tier.level === highestHintLevel;
 
             return (
               <button
@@ -112,13 +117,20 @@ export const HintControls: React.FC<HintControlsProps> = ({
                 onClick={() => handleHintClick(tier.level)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
                   tier.color
-                } hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-sm`}
-                title={`${tier.title}: ${tier.desc}`}
+                } ${isCurrentHighest ? 'ring-1 ring-white/60 shadow-md scale-[1.02]' : isUnlocked ? 'opacity-90' : ''} hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-sm`}
+                title={`${tier.title}: ${tier.desc}${isUnlocked ? ' (Unlocked)' : ''}`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span className="font-semibold">{tier.title}</span>
-                <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-black/40 text-slate-300 ml-0.5 font-mono">
-                  {tier.badge}
+                <span className={`text-[9px] uppercase px-1 py-0.2 rounded font-mono flex items-center gap-0.5 ${
+                  isCurrentHighest
+                    ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
+                    : isUnlocked
+                    ? 'bg-black/60 text-emerald-300'
+                    : 'bg-black/40 text-slate-300'
+                } ml-0.5`}>
+                  {isUnlocked && <Check className="w-2.5 h-2.5" />}
+                  <span>{tier.badge}</span>
                 </span>
               </button>
             );
