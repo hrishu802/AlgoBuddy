@@ -15,8 +15,8 @@ export const DEFAULT_GEMMA_PROVIDER = 'huggingface';
 export const DEFAULT_GEMMA_MODEL = 'google/gemma-3-12b-it';
 export const DEFAULT_HF_ROUTER_ENDPOINT = 'https://router.huggingface.co/v1';
 
-// Official Groq Cloud configuration (Free Tier, Meta Llama 3.3 70B Versatile, ₹0 Budget)
-export const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+// Official Groq Cloud configuration (Free Tier, GPT OSS 20B, ₹0 Budget)
+export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
 export const DEFAULT_GROQ_ENDPOINT = 'https://api.groq.com/openai/v1';
 
 // Request body size limit: 512 KB
@@ -349,7 +349,7 @@ export function getGatewayDiagnostics(providerOverride?: string): GemmaHealthRes
   const endpoint = getEnvEndpoint(provider);
 
   const openModelName = provider === 'groq'
-    ? `Meta Llama (${model}) via Groq Cloud (Free Tier)`
+    ? `GPT OSS (${model}) via Groq Cloud (Free Tier)`
     : 'Google Gemma 3 12B Instruct (Hosted Open Weights)';
 
   return {
@@ -609,7 +609,7 @@ export async function checkHealth(body?: GemmaRequestBody): Promise<GemmaHealthR
         provider: 'groq',
         model,
         endpoint: resolveEndpoint(endpoint),
-        openModelName: `Meta Llama 3.3 70B (${model}) via Groq (Free Tier)`,
+        openModelName: `GPT OSS (${model}) via Groq (Free Tier)`,
         message: 'No Groq API key found. Set GROQ_API_KEY in server .env (get a free key at https://console.groq.com/keys) or enter your key in Settings.'
       };
     }
@@ -619,7 +619,7 @@ export async function checkHealth(body?: GemmaRequestBody): Promise<GemmaHealthR
       provider: 'groq',
       model,
       endpoint: resolveEndpoint(endpoint),
-      openModelName: `Meta Llama 3.3 70B (${model}) via Groq (Free Tier)`,
+      openModelName: `GPT OSS (${model}) via Groq (Free Tier)`,
       message: `Configured for Groq free-tier hosted inference using ${model}. Strict ₹0 budget.`
     };
   }
@@ -933,6 +933,10 @@ export async function executeGemmaInference(body: GemmaRequestBody) {
     } else if (apiRes.status >= 500) {
       category = 'provider_down';
       userFriendlyMsg = `${providerName} returned HTTP ${apiRes.status}: ${sanitizedMsg || 'The upstream inference provider is temporarily down or overloaded.'}`;
+    } else if (apiRes.status === 404) {
+      category = 'bad_request';
+      const recModel = provider === 'groq' ? 'openai/gpt-oss-20b' : 'google/gemma-3-12b-it';
+      userFriendlyMsg = `${providerName} returned HTTP 404: Model '${model}' was not found or has been deprecated. Please verify your model ID in Settings (recommended: ${recModel}). Upstream message: ${sanitizedMsg}`;
     } else {
       category = 'bad_request';
       userFriendlyMsg = `${providerName} (${model}) returned HTTP ${apiRes.status}: ${sanitizedMsg}`;
@@ -963,7 +967,7 @@ export async function executeGemmaInference(body: GemmaRequestBody) {
     provider,
     model,
     endpoint: apiUrl,
-    openModel: provider === 'groq' ? `Meta Llama (${model}) via Groq Cloud` : `Google Gemma (${model})`,
+    openModel: provider === 'groq' ? `GPT OSS (${model}) via Groq Cloud` : `Google Gemma (${model})`,
     text: responseText,
     timestamp: new Date().toISOString()
   };

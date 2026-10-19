@@ -88,7 +88,7 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
 
       const result = await executeGemmaInference({
         provider: 'groq',
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
         apiKey: 'gsk_test_key_mock_12345',
         prompt: 'Analyze constraints for Two Sum'
       });
@@ -100,12 +100,32 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
       expect(options.headers['Authorization']).toBe('Bearer gsk_test_key_mock_12345');
 
       const sentBody = JSON.parse(options.body);
-      expect(sentBody.model).toBe('llama-3.3-70b-versatile');
+      expect(sentBody.model).toBe('openai/gpt-oss-20b');
       expect(sentBody.messages).toEqual([{ role: 'user', content: 'Analyze constraints for Two Sum' }]);
 
       expect(result.success).toBe(true);
       expect(result.provider).toBe('groq');
       expect(result.text).toContain('Think first. Hint second. Solution last.');
+    });
+
+    it('sends default model openai/gpt-oss-20b when model parameter is omitted', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { role: 'assistant', content: 'Socratic response' } }]
+        })
+      });
+      globalThis.fetch = mockFetch;
+
+      await executeGemmaInference({
+        provider: 'groq',
+        apiKey: 'gsk_test_key_mock_12345',
+        prompt: 'Analyze constraints'
+      });
+
+      const [, options] = mockFetch.mock.calls[0];
+      const sentBody = JSON.parse(options.body);
+      expect(sentBody.model).toBe('openai/gpt-oss-20b');
     });
 
     it('throws HTTP 401 when Groq API key is missing', async () => {
@@ -114,7 +134,7 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
       await expect(
         executeGemmaInference({
           provider: 'groq',
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-20b',
           prompt: 'Hello'
         })
       ).rejects.toThrow(/Groq API key is required/i);
@@ -144,7 +164,7 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 429,
-        text: async () => JSON.stringify({ error: { message: 'Rate limit reached for model llama-3.3-70b-versatile' } })
+        text: async () => JSON.stringify({ error: { message: 'Rate limit reached for model openai/gpt-oss-20b' } })
       });
       globalThis.fetch = mockFetch;
 
@@ -161,6 +181,32 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
 
       // Crucial: ensure no automated retry was dispatched to avoid burning free quota
       expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles upstream HTTP 404 deprecated model error accurately with actionable guidance', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () => JSON.stringify({
+          error: {
+            message: "The model 'llama-3.3-70b-versatile' does not exist or has been deprecated."
+          }
+        })
+      });
+      globalThis.fetch = mockFetch;
+
+      await expect(
+        executeGemmaInference({
+          provider: 'groq',
+          model: 'llama-3.3-70b-versatile',
+          apiKey: 'gsk_valid_key',
+          prompt: 'Test'
+        })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        errorCategory: 'bad_request',
+        message: expect.stringContaining("Model 'llama-3.3-70b-versatile' was not found or has been deprecated")
+      });
     });
 
     it('handles upstream network timeout (504) and failure (503)', async () => {
@@ -212,7 +258,7 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
       const health = await checkHealth({
         provider: 'groq',
         apiKey: 'gsk_configured_key_123',
-        model: 'llama-3.3-70b-versatile'
+        model: 'openai/gpt-oss-20b'
       });
 
       expect(health.status).toBe('configured');
@@ -253,14 +299,14 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
       const res = validateGemmaPayload({
         action: 'chat',
         provider: 'groq',
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
         prompt: 'Explain two sum'
       });
       expect(res.valid).toBe(true);
       if (res.valid === true) {
         // TypeScript compiler narrows res to ValidationSuccess here
         expect(res.data.provider).toBe('groq');
-        expect(res.data.model).toBe('llama-3.3-70b-versatile');
+        expect(res.data.model).toBe('openai/gpt-oss-20b');
       }
     });
 
@@ -476,6 +522,44 @@ describe('Groq Provider Integration & Safety Suite (₹0 Free Tier Budget)', () 
       expect(msg.content).toContain('Groq Free-Tier Rate Limit Reached (HTTP 429)');
       expect(msg.content).toContain('30 requests per minute');
       expect(msg.suggestedActions).toContain('Switch to Socratic Mock');
+    });
+
+    it('formats Groq 404 error advising user to switch to openai/gpt-oss-20b', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({
+          success: false,
+          statusCode: 404,
+          errorCategory: 'bad_request',
+          error: "Groq returned HTTP 404: Model 'llama-3.3-70b-versatile' was not found or has been deprecated. Please verify your model ID in Settings (recommended: openai/gpt-oss-20b)."
+        })
+      });
+      globalThis.fetch = mockFetch;
+
+      const service = new GroqAIService();
+      const msg = await service.startProblemSession(testProblem);
+
+      expect(msg.content).toContain('Groq Model Not Found / Deprecated (HTTP 404)');
+      expect(msg.content).toContain('openai/gpt-oss-20b');
+      expect(msg.suggestedActions).toContain('Switch to Socratic Mock');
+    });
+
+    it('GroqAIService sends openai/gpt-oss-20b by default', async () => {
+      let capturedPayload: any = null;
+      const mockFetch = vi.fn().mockImplementation(async (_url, options) => {
+        capturedPayload = JSON.parse(options.body);
+        return {
+          ok: true,
+          json: async () => ({ success: true, text: 'Response' })
+        };
+      });
+      globalThis.fetch = mockFetch;
+
+      const service = new GroqAIService();
+      await service.startProblemSession(testProblem);
+
+      expect(capturedPayload.model).toBe('openai/gpt-oss-20b');
     });
   });
 

@@ -38,7 +38,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [gemmaEndpoint, setGemmaEndpoint] = useState(settings.gemmaEndpoint || 'https://router.huggingface.co/v1');
 
   const [groqApiKey, setGroqApiKey] = useState(settings.groqApiKey || '');
-  const [groqModel, setGroqModel] = useState(settings.groqModel || 'llama-3.3-70b-versatile');
+  const [groqModel, setGroqModel] = useState(settings.groqModel || 'openai/gpt-oss-20b');
   const [groqEndpoint, setGroqEndpoint] = useState(settings.groqEndpoint || 'https://api.groq.com/openai/v1');
   
   const [geminiApiKey, setGeminiApiKey] = useState(settings.geminiApiKey || '');
@@ -61,7 +61,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setGemmaApiKey(settings.gemmaApiKey || '');
       setGemmaEndpoint(settings.gemmaEndpoint || 'https://router.huggingface.co/v1');
       setGroqApiKey(settings.groqApiKey || '');
-      setGroqModel(settings.groqModel || 'llama-3.3-70b-versatile');
+      setGroqModel(settings.groqModel || 'openai/gpt-oss-20b');
       setGroqEndpoint(settings.groqEndpoint || 'https://api.groq.com/openai/v1');
       setGeminiApiKey(settings.geminiApiKey || '');
       setGeminiModel(settings.model || 'gemini-1.5-flash');
@@ -226,7 +226,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>Groq (Hosted Free Tier)</span>
                 </div>
                 <div className="text-[10px] text-slate-400 leading-tight">
-                  Meta Llama 3.3 70B Versatile on official Groq free tier. Strict ₹0 budget.
+                  OpenAI GPT OSS 20B on official Groq free tier. Strict ₹0 budget.
                 </div>
               </button>
 
@@ -310,28 +310,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setGroqModel('llama-3.3-70b-versatile')}
+                    onClick={() => setGroqModel('openai/gpt-oss-20b')}
                     className={`p-2 rounded-lg border text-left text-[11px] transition-colors ${
-                      groqModel === 'llama-3.3-70b-versatile'
+                      groqModel === 'openai/gpt-oss-20b'
                         ? 'bg-orange-600/30 text-orange-200 border-orange-500 font-semibold'
                         : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
                     }`}
                   >
-                    <div className="font-semibold text-slate-200">Llama 3.3 70B Versatile</div>
-                    <div className="text-[9px] text-slate-400">Recommended for DSA reasoning (128k context)</div>
+                    <div className="font-semibold text-slate-200">GPT OSS 20B</div>
+                    <div className="text-[9px] text-slate-400">Recommended for DSA reasoning (131k context)</div>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setGroqModel('llama-3.1-8b-instant')}
+                    onClick={() => setGroqModel('openai/gpt-oss-120b')}
                     className={`p-2 rounded-lg border text-left text-[11px] transition-colors ${
-                      groqModel === 'llama-3.1-8b-instant'
+                      groqModel === 'openai/gpt-oss-120b'
                         ? 'bg-orange-600/30 text-orange-200 border-orange-500 font-semibold'
                         : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
                     }`}
                   >
-                    <div className="font-semibold text-slate-200">Llama 3.1 8B Instant</div>
-                    <div className="text-[9px] text-slate-400">Ultra-low latency (128k context)</div>
+                    <div className="font-semibold text-slate-200">GPT OSS 120B</div>
+                    <div className="text-[9px] text-slate-400">Deep reasoning & analysis (131k context)</div>
                   </button>
                 </div>
               </div>
@@ -419,7 +419,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="button"
                     onClick={() => {
                       setGemmaProvider('groq');
-                      setGemmaModel('llama-3.3-70b-versatile');
+                      setGemmaModel('openai/gpt-oss-20b');
                       setGemmaEndpoint('https://api.groq.com/openai/v1');
                     }}
                     className={`p-1.5 rounded-lg border text-center text-[11px] transition-colors ${

@@ -199,6 +199,22 @@ describe('Storage Service - Workstream B: Stats Defaults, Reset, and Defensive L
       expect(loaded.gemmaEndpoint).toBe('https://router.huggingface.co/v1');
     });
 
+    it('migrates legacy deprecated Groq models gracefully to openai/gpt-oss-20b', () => {
+      localStorage.setItem('algobuddy_settings', JSON.stringify({
+        provider: 'groq',
+        groqModel: 'llama-3.3-70b-versatile'
+      }));
+      const loaded = loadAISettings();
+      expect(loaded.groqModel).toBe('openai/gpt-oss-20b');
+
+      localStorage.setItem('algobuddy_settings', JSON.stringify({
+        provider: 'groq',
+        groqModel: 'llama-3.1-8b-instant'
+      }));
+      const loadedInstant = loadAISettings();
+      expect(loadedInstant.groqModel).toBe('openai/gpt-oss-20b');
+    });
+
     it('handles malformed JSON defensively', () => {
       localStorage.setItem('algobuddy_settings', 'MALFORMED');
       expect(() => loadAISettings()).not.toThrow();

@@ -120,6 +120,8 @@ export const DEFAULT_SETTINGS: AISettings = {
   gemmaProvider: 'huggingface',
   gemmaModel: 'google/gemma-3-12b-it',
   gemmaEndpoint: 'https://router.huggingface.co/v1',
+  groqModel: 'openai/gpt-oss-20b',
+  groqEndpoint: 'https://api.groq.com/openai/v1',
   model: 'gemini-1.5-flash',
   mentorStrictness: 'strict'
 };
@@ -187,6 +189,10 @@ export function loadAISettings(): AISettings {
           parsed.gemmaProvider = 'huggingface';
           parsed.gemmaModel = 'google/gemma-3-12b-it';
           parsed.gemmaEndpoint = 'https://router.huggingface.co/v1';
+        }
+        // Migrate legacy deprecated Groq models to openai/gpt-oss-20b
+        if (parsed.groqModel === 'llama-3.3-70b-versatile' || parsed.groqModel === 'llama-3.1-8b-instant') {
+          parsed.groqModel = 'openai/gpt-oss-20b';
         }
         return { ...DEFAULT_SETTINGS, ...parsed };
       }

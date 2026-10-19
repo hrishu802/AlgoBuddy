@@ -1236,7 +1236,7 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
 }
 
 // ==========================================
-// HOSTED GROQ AI SERVICE (Free Tier Meta Llama 3.3 70B, ₹0 Budget)
+// HOSTED GROQ AI SERVICE (Free Tier GPT OSS 20B, ₹0 Budget)
 // ==========================================
 export class GroqAIService implements AIService {
   private settings?: AISettings;
@@ -1603,7 +1603,7 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
   }
 
   private formatConfigurationError(stage: PedagogyStage, err: unknown): ChatMessage {
-    const model = this.settings?.groqModel || this.settings?.model || 'llama-3.3-70b-versatile';
+    const model = this.settings?.groqModel || this.settings?.model || 'openai/gpt-oss-20b';
 
     let statusCode = 400;
     let errorCategory: string = 'bad_request';
@@ -1621,6 +1621,9 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
       } else if (errorMessage.includes('429')) {
         statusCode = 429;
         errorCategory = 'rate_limit';
+      } else if (errorMessage.includes('404')) {
+        statusCode = 404;
+        errorCategory = 'bad_request';
       } else if (errorMessage.includes('403')) {
         statusCode = 403;
         errorCategory = 'permission';
@@ -1677,13 +1680,22 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
         `Check [Groq Status](https://status.groq.com) for service updates.`,
         `Switch to **Socratic Mock (Dev Fallback)** to keep practicing without interruption.`
       ];
+    } else if (statusCode === 404) {
+      title = 'Groq Model Not Found / Deprecated (HTTP 404)';
+      categoryBadge = 'Model Not Found';
+      explanation = `The configured model '${model}' was not found or has been deprecated by Groq.`;
+      resolutionSteps = [
+        `Open **Settings (⚙️)** and select an active model (such as \`openai/gpt-oss-20b\`).`,
+        `If using server environment variables, update \`GROQ_MODEL=openai/gpt-oss-20b\` in Vercel or your \`.env\` file.`,
+        `Switch to **Socratic Mock (Dev Fallback)** in Settings to continue without interruption.`
+      ];
     } else {
       title = `Groq Request Issue (HTTP ${statusCode})`;
       categoryBadge = 'Invalid Request';
       explanation = `The request could not be processed by Groq: ${errorMessage}`;
       resolutionSteps = [
         `Click **"Retry Request"**.`,
-        `Verify model settings in **Settings (⚙️)** (supported free models: \`llama-3.3-70b-versatile\`, \`llama-3.1-8b-instant\`).`,
+        `Verify model settings in **Settings (⚙️)** (supported free models: \`openai/gpt-oss-20b\`, \`openai/gpt-oss-120b\`).`,
         `Switch to **Socratic Mock (Dev Fallback)** in Settings.`
       ];
     }
@@ -1729,7 +1741,7 @@ Guide the user Socratically on how to address bottlenecks and optimize their cod
       messages,
       temperature: 0.3,
       provider: 'groq' as const,
-      model: this.settings?.groqModel || this.settings?.model || 'llama-3.3-70b-versatile',
+      model: this.settings?.groqModel || this.settings?.model || 'openai/gpt-oss-20b',
       apiKey: this.settings?.groqApiKey,
       endpoint: this.settings?.groqEndpoint
     };

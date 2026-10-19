@@ -13,8 +13,8 @@ AlgoBuddy is an open-source, AI-powered Data Structures and Algorithms (DSA) men
 AlgoBuddy is built with open-source and open-weight AI at its foundation, supporting two primary hosted options with a **strict ₹0 inference budget**:
 
 1. **Groq Cloud (Primary Free Hosted Inference)**:
-   - **Model**: Meta Llama 3.3 70B Versatile (`llama-3.3-70b-versatile`, 128k context) or Meta Llama 3.1 8B Instant (`llama-3.1-8b-instant`).
-   - **Zero Cost Budget**: Uses Groq's official **Free Tier** (up to 30 RPM, 14,400 RPD) at **₹0 ($0)** without needing a paid subscription or credit card.
+   - **Model**: OpenAI GPT OSS 20B (`openai/gpt-oss-20b`, 131k context) or OpenAI GPT OSS 120B (`openai/gpt-oss-120b`).
+   - **Zero Cost Budget**: Uses Groq's official **Free Tier** (30 RPM, 1,000 RPD, 8,000 TPM) at **₹0 ($0)** without needing a paid subscription or credit card.
    - **Ultra-Fast LPUs**: Groq's Language Processing Units deliver immediate responses for interactive Socratic hints and live code analysis.
 
 2. **Google Gemma 3 (Hosted via Hugging Face Inference Providers)**:
@@ -129,7 +129,7 @@ npm install
 
 ### 2. Configure AI Provider Credentials
 
-AlgoBuddy connects to **Groq Cloud** (free tier with strict ₹0 budget using Meta Llama 3.3 70B) or **Google Gemma 3 12B Instruct** via Hugging Face.
+AlgoBuddy connects to **Groq Cloud** (free tier with strict ₹0 budget using OpenAI GPT OSS 20B) or **Google Gemma 3 12B Instruct** via Hugging Face.
 
 #### Option A: Groq Cloud (Recommended • Free Tier • ₹0 Budget)
 1. Obtain a free Groq API key at [console.groq.com/keys](https://console.groq.com/keys) (no credit card required).
@@ -141,7 +141,7 @@ AlgoBuddy connects to **Groq Cloud** (free tier with strict ₹0 budget using Me
    ```env
    AI_PROVIDER=groq
    GROQ_API_KEY=gsk_your_groq_api_key_here
-   GROQ_MODEL=llama-3.3-70b-versatile
+   GROQ_MODEL=openai/gpt-oss-20b
    ```
 
 #### Option B: Google Gemma via Hugging Face
@@ -237,7 +237,7 @@ In the Vercel project settings under **Settings > Environment Variables**, add:
 | :--- | :--- | :--- |
 | `AI_PROVIDER` | `groq` or `huggingface` | Optional (default: `groq` if GROQ_API_KEY set) |
 | `GROQ_API_KEY` | Your Groq Cloud API Key (`gsk_...`, free from console.groq.com/keys) | **Required for Groq (₹0 Free Tier)** |
-| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Optional (default: `llama-3.3-70b-versatile`) |
+| `GROQ_MODEL` | `openai/gpt-oss-20b` | Optional (default: `openai/gpt-oss-20b`) |
 | `HF_TOKEN` | Your Hugging Face User Access Token (`hf_...`) | Optional (Required if using Hugging Face) |
 | `GEMMA_PROVIDER` | `huggingface` | Optional (default: `huggingface`) |
 | `GEMMA_MODEL` | `google/gemma-3-12b-it` | Optional (default: `google/gemma-3-12b-it`) |
